@@ -337,12 +337,22 @@ python main.py
 
 ## ⚠️ License & Terms
 
-Ether is open-source. By using this software, you agree to:
+Ether is source-available software developed by **LearningBotsOfficial**.
 
-- **Retain Credits:** Keep original credits to LearningBotsOfficial
-- **No Reselling:** Do not resell this software as a standalone product
-- **Responsible Use:** Use in accordance with Telegram's Terms of Service
-- **Attribution:** Proper attribution to Ether project when forking or reusing
+By using, modifying, or sharing this project, you agree to the following terms:
+
+- Original credits to **LearningBotsOfficial** must remain intact.
+- Any public fork or modified version must provide proper attribution to:
+  **LearningBotsOfficial/Ether**
+- Reselling this project or distributing paid/public clones is prohibited.
+- Republishing this project under another name without permission is prohibited.
+- Personal and private modifications are allowed.
+- Use this software responsibly and follow Telegram's Terms of Service.
+
+Failure to follow these terms may result in permission being revoked.
+
+© 2026 LearningBotsOfficial. All rights reserved.
+
 
 ---
 
