@@ -47,7 +47,7 @@ def setup(ether, db, owner_id):
                 "<code>.setwelcome</code> - Set welcome\n"
                 "<code>.allow</code> - Allow user\n"
                 "<code>.disallow</code> - Disallow user\n\n"
-                "<i>Add BOT_USERNAME to .env for button UI.</i>"
+                "<i>Bot identity not initialized. Please wait or check your BOT_TOKEN.</i>"
                 "</blockquote>",
                 parse_mode="html"
             )

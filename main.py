@@ -21,6 +21,7 @@
 
 import asyncio
 import sys
+import time
 import os
 
 try:
@@ -41,6 +42,7 @@ logger = get_logger("EtherMain")
 
 # Global loader for plugin reloading after login
 plugin_loader = None
+Config.START_TIME = time.time()
 
 
 async def run_userbot():
@@ -48,42 +50,34 @@ async def run_userbot():
     # Connect to database
     db_connected = await ether_db.connect()
     if not db_connected:
-        logger.warning("Running without database - some features disabled")
-    
-    # Check session file existence
-    session_file = f"{Config.SESSION_NAME}.session"
-    session_exists = os.path.exists(session_file)
-    logger.info(f"Session file check: {session_file} - {'EXISTS' if session_exists else 'NOT FOUND'}")
+        logger.warning("Database: DISCONNECTED (Running in limited mode)")
+    else:
+        logger.info(f"Database: CONNECTED ({Config.DB_NAME})")
     
     # Initialize Telegram client
     client_wrapper = EtherUserClient()
-    logger.info("Initializing Telegram client...")
-    
     connected = await client_wrapper.connect()
     
     if not connected:
-        logger.error("Failed to connect to Telegram")
+        logger.error("Connection: FAILED (Check API_ID/HASH or Internet)")
         return
-    
-    logger.info("Telegram client connected successfully")
     
     # Check authorization
     is_authorized = await client_wrapper.is_authorized()
-    logger.info(f"Session authorization check: {'AUTHORIZED' if is_authorized else 'NOT AUTHORIZED'}")
     
     if not is_authorized:
-        logger.warning("Session not authorized. Use /login command to authenticate.")
-        logger.info("Userbot running in unauthenticated mode - login required")
+        logger.warning("Session: UNAUTHORIZED (Waiting for /login)")
     else:
         # Auto-fetch user details
         client = client_wrapper.get_client()
         me = await client.get_me()
-        logger.info(f"Userbot session authorized: {me.first_name} (@{me.username})")
-    
-    # Get raw client for plugin loading
-    client = client_wrapper.get_client()
+        Config.OWNER_NAME = me.first_name
+        Config.OWNER_USERNAME = me.username
+        Config.OWNER_MENTION = f"<a href='tg://user?id={me.id}'>{me.first_name}</a>"
+        logger.info(f"Session: AUTHORIZED (User: {Config.OWNER_NAME})")
     
     # Set userbot client reference for bot login
+    client = client_wrapper.get_client()
     set_userbot_client(client, client_wrapper)
     
     # Load all plugins
@@ -95,54 +89,54 @@ async def run_userbot():
     )
     loader.load_all()
     plugin_loader = loader
-    
-    # Set plugin loader reference for bot to reload after login
     set_plugin_loader(loader)
     
     stats = loader.get_stats()
-    logger.info(f"Loaded {stats['total']} plugins: {stats['plugins']}")
-    logger.info("Userbot running")
+    logger.info(f"Plugins: LOADED ({stats['total']} modules active)")
     
+    logger.info("Userbot: RUNNING (Awaiting commands)")
     await client.run_until_disconnected()
 
 
 async def run_bot():
     if not Config.BOT_TOKEN:
-        logger.info("No BOT_TOKEN - bot UI disabled")
+        logger.info("Bot UI: DISABLED (No BOT_TOKEN)")
         return
     
-    logger.info("Bot Ui starting...")
     await ether_bot.start()
     
     # Auto-fetch bot details
     me = await ether_bot.get_me()
     Config.BOT_USERNAME = me.username
-    logger.info(f"Bot started as @{me.username} ({me.first_name})")
+    Config.BOT_MENTION = f"@{me.username}"
+    logger.info(f"Bot UI: ACTIVE (User: @{me.username})")
 
 
 async def startup():
     setup_logger()
-    logger.info("=" * 50)
-    logger.info("Ether Hybrid System Starting")
-    logger.info("=" * 50)
+    
+    print("\n" + "=" * 60)
+    print("    ______ _   _                      ")
+    print("   |  ____| | | |                     ")
+    print("   | |__  | |_| |__   ___ _ __        ")
+    print("   |  __| | __| '_ \\ / _ \\ '__|       ")
+    print("   | |____| |_| | | |  __/ |          ")
+    print("   |______|\\__|_| |_|\\___|_|          ")
+    print("\n      Hybrid Automation System v2.0   ")
+    print("=" * 60 + "\n")
+    
+    logger.info("Initializing Ether Hybrid System...")
     
     # Validate channels file integrity
     if not validate_integrity():
-        logger.error("=" * 50)
-        logger.error("SECURITY VIOLATION DETECTED")
-        logger.error("The channels.py file has been modified.")
-        logger.error("Unauthorized modification detected.")
-        logger.error("Bot will not start to protect integrity.")
-        logger.error("=" * 50)
-        print("\n" + "=" * 50)
-        print("SECURITY VIOLATION DETECTED")
-        print("The channels.py file has been modified.")
-        print("Unauthorized modification detected.")
-        print("Bot will not start to protect integrity.")
-        print("=" * 50 + "\n")
+        logger.critical("CORE INTEGRITY VIOLATION DETECTED")
+        print("\n" + "!" * 60)
+        print(" SECURITY ALERT: core/channels.py has been modified.")
+        print(" Bot startup aborted to protect system integrity.")
+        print("!" * 60 + "\n")
         sys.exit(1)
     
-    logger.info("Channels file integrity validated successfully")
+    logger.info("Core integrity check: PASSED")
     
     # Start bot first - it should always run for /login
     bot_task = asyncio.create_task(run_bot())
@@ -178,9 +172,10 @@ async def startup():
 
 
 async def shutdown():
-    logger.info("Shutting down...")
+    logger.info("System: SHUTTING DOWN")
     await ether_bot.stop()
     await ether_db.close()
+    logger.info("System: OFFLINE")
 
 
 def main():

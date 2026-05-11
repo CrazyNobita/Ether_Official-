@@ -19,6 +19,8 @@
 #  Thank you for respecting open-source development.
 # =============================================================================
 
+import time
+import psutil
 import random
 import os
 import asyncio
@@ -268,16 +270,31 @@ async def inline_help(event):
 # ============================================
 
     elif event.text == "alive":
-        builder = event.builder
-    
+        bot_info = Config.BOT_MENTION or "Bot"
+        
+        # Calculate Uptime
+        uptime_seconds = int(time.time() - Config.START_TIME)
+        days, remainder = divmod(uptime_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        uptime = f"{days}d {hours}h {minutes}m {seconds}s"
+        
+        # System Stats
+        cpu = psutil.cpu_percent()
+        ram = psutil.virtual_memory().percent
+        disk = psutil.disk_usage('/').percent
+        
         result = builder.photo(
             file="assets/ether_logo.png",
             text=(
                 "⚡ <b>Ether Userbot is Alive</b>\n\n"
                 "<blockquote>"
+                f"🤖 Bot: {bot_info}\n"
                 "🟢 Status: ONLINE\n"
-                "⚙️ System: RUNNING\n"
-                "🛡️ DM Shield: ACTIVE\n"
+                f"⏳ Uptime: {uptime}\n"
+                f"🖥️ CPU: {cpu}%\n"
+                f"📊 RAM: {ram}%\n"
+                f"💾 Disk: {disk}%\n"
                 "📡 Telethon: CONNECTED\n"
                 "💾 Database: STABLE\n"
                 "</blockquote>\n\n"
@@ -714,7 +731,11 @@ async def bot_login_flow_handler(event):
             # Verify authorization
             is_authorized = await userbot_client.is_user_authorized()
             if is_authorized:
-                logger.info("Userbot session verified as authorized")
+                me = await userbot_client.get_me()
+                Config.OWNER_NAME = me.first_name
+                Config.OWNER_USERNAME = me.username
+                Config.OWNER_MENTION = f"<a href='tg://user?id={me.id}'>{me.first_name}</a>"
+                logger.info(f"Userbot session verified as authorized: {Config.OWNER_NAME} (@{me.username})")
             else:
                 logger.warning("Userbot session not authorized after reconnection")
             
@@ -808,7 +829,11 @@ async def bot_login_flow_handler(event):
             
             is_authorized = await userbot_client.is_user_authorized()
             if is_authorized:
-                logger.info("Userbot session verified as authorized (2FA)")
+                me = await userbot_client.get_me()
+                Config.OWNER_NAME = me.first_name
+                Config.OWNER_USERNAME = me.username
+                Config.OWNER_MENTION = f"<a href='tg://user?id={me.id}'>{me.first_name}</a>"
+                logger.info(f"Userbot session verified as authorized (2FA): {Config.OWNER_NAME} (@{me.username})")
             else:
                 logger.warning("Userbot session not authorized after 2FA reconnection")
             

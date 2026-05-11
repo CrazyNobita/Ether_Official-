@@ -30,9 +30,15 @@ class Config:
     API_ID: int = int(os.getenv("API_ID", 0))
     API_HASH: str = os.getenv("API_HASH", "")
     OWNER_ID: int = int(os.getenv("OWNER_ID", 0))
+    OWNER_NAME: str = ""        # Auto-fetched (First Name)
+    OWNER_USERNAME: str = ""    # Auto-fetched
+    OWNER_MENTION: str = ""     # Auto-fetched ([Name](tg://user?id=123))
     
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
-    BOT_USERNAME: str = os.getenv("BOT_USERNAME", "")  # Auto-fetched if not set
+    BOT_USERNAME: str = os.getenv("BOT_USERNAME", "")  # Auto-fetched
+    BOT_MENTION: str = ""       # Auto-fetched (@username)
+    
+    START_TIME: float = 0.0     # Set on startup
     
     SESSION_NAME: str = os.getenv("SESSION_NAME", "etheruserbot")
     SESSION_DIR: str = os.getenv("SESSION_DIR", "sessions")
