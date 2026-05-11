@@ -2,6 +2,7 @@ services:
   - type: web
     name: ether-userbot
     env: docker
+    autoDeploy: false
     plan: free
     region: oregon
     healthCheckPath: /
