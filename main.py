@@ -98,18 +98,25 @@ async def run_userbot():
     await client.run_until_disconnected()
 
 
-async def run_bot():
+async def init_bot_identity():
     if not Config.BOT_TOKEN:
-        logger.info("Bot UI: DISABLED (No BOT_TOKEN)")
         return
     
+    # Start bot briefly to fetch identity
     await ether_bot.start()
-    
-    # Auto-fetch bot details
     me = await ether_bot.get_me()
     Config.BOT_USERNAME = me.username
     Config.BOT_MENTION = f"@{me.username}"
-    logger.info(f"Bot UI: ACTIVE (User: @{me.username})")
+    logger.info(f"Bot UI: IDENTITY FETCHED (@{me.username})")
+
+
+async def run_bot():
+    if not Config.BOT_TOKEN:
+        return
+    
+    # Bot is already started by init_bot_identity, just keep it alive
+    logger.info("Bot UI: RUNNING")
+    await ether_bot.run_until_disconnected()
 
 
 async def startup():
@@ -138,37 +145,45 @@ async def startup():
     
     logger.info("Core integrity check: PASSED")
     
-    # Start bot first - it should always run for /login
-    bot_task = asyncio.create_task(run_bot())
+    # 1. Fetch bot identity first (sequential)
+    if Config.BOT_TOKEN:
+        try:
+            await init_bot_identity()
+        except Exception as e:
+            logger.error(f"Bot Identity: FAILED ({e})")
     
-    # Start userbot in background - may fail if session is invalid
+    # 2. Start all components as concurrent tasks
+    tasks = []
+    
+    # Userbot task
     userbot_task = asyncio.create_task(run_userbot())
+    tasks.append(userbot_task)
     
-    # Start web service if enabled
+    # Bot UI task
+    if Config.BOT_TOKEN:
+        bot_task = asyncio.create_task(run_bot())
+        tasks.append(bot_task)
+    
+    # Web Service task
     if Config.WEB_SERVICE:
         web_task = asyncio.create_task(run_web_service())
+        tasks.append(web_task)
     
-    # Wait for bot to finish (it should run indefinitely)
+    # 3. Wait for components
     try:
-        await bot_task
+        # We wait for the userbot task primarily as it's the core
+        await userbot_task
     except Exception as e:
-        logger.error(f"Bot task failed: {e}", exc_info=True)
+        logger.error(f"System: CRITICAL FAILURE ({e})")
     finally:
-        # Cancel userbot if bot stops
-        if not userbot_task.done():
-            userbot_task.cancel()
-            try:
-                await userbot_task
-            except asyncio.CancelledError:
-                pass
-                
-        # Cancel web service if running
-        if Config.WEB_SERVICE and 'web_task' in locals() and not web_task.done():
-            web_task.cancel()
-            try:
-                await web_task
-            except asyncio.CancelledError:
-                pass
+        # Cleanup all tasks on exit
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
 
 async def shutdown():
