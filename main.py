@@ -46,6 +46,8 @@ Config.START_TIME = time.time()
 
 
 async def run_userbot():
+    global plugin_loader
+    client_wrapper = EtherUserClient()
 
     # Connect to database
     db_connected = await ether_db.connect()
@@ -54,48 +56,67 @@ async def run_userbot():
     else:
         logger.info(f"Database: CONNECTED ({Config.DB_NAME})")
     
-    # Initialize Telegram client
-    client_wrapper = EtherUserClient()
-    connected = await client_wrapper.connect()
-    
-    if not connected:
-        logger.error("Connection: FAILED (Check API_ID/HASH or Internet)")
-        return
-    
-    # Check authorization
-    is_authorized = await client_wrapper.is_authorized()
-    
-    if not is_authorized:
-        logger.warning("Session: UNAUTHORIZED (Waiting for /login)")
-    else:
-        # Auto-fetch user details
+    while True:
+        # Initialize/get the current client
         client = client_wrapper.get_client()
-        me = await client.get_me()
-        Config.OWNER_NAME = me.first_name
-        Config.OWNER_USERNAME = me.username
-        Config.OWNER_MENTION = f"<a href='tg://user?id={me.id}'>{me.first_name}</a>"
-        logger.info(f"Session: AUTHORIZED (User: {Config.OWNER_NAME})")
-    
-    # Set userbot client reference for bot login
-    client = client_wrapper.get_client()
-    set_userbot_client(client, client_wrapper)
-    
-    # Load all plugins
-    global plugin_loader
-    loader = PluginLoader(
-        client=client,
-        db=ether_db.db,
-        owner_id=Config.OWNER_ID
-    )
-    loader.load_all()
-    plugin_loader = loader
-    set_plugin_loader(loader)
-    
-    stats = loader.get_stats()
-    logger.info(f"Plugins: LOADED ({stats['total']} modules active)")
-    
-    logger.info("Userbot: RUNNING (Awaiting commands)")
-    await client.run_until_disconnected()
+        
+        if not client.is_connected():
+            logger.info("Userbot: CONNECTING...")
+            connected = await client_wrapper.connect()
+            if not connected:
+                logger.error("Connection: FAILED. Retrying in 10s...")
+                await asyncio.sleep(10)
+                continue
+
+        # Check authorization
+        is_authorized = await client_wrapper.is_authorized()
+        
+        if not is_authorized:
+            logger.warning("Session: UNAUTHORIZED (Waiting for /login via Bot UI)")
+        else:
+            # Auto-fetch user details for authorized sessions
+            try:
+                me = await client.get_me()
+                if me:
+                    Config.OWNER_NAME = me.first_name
+                    Config.OWNER_USERNAME = me.username
+                    Config.OWNER_MENTION = f"<a href='tg://user?id={me.id}'>{me.first_name}</a>"
+                    logger.info(f"Session: AUTHORIZED (User: {Config.OWNER_NAME})")
+            except Exception as e:
+                logger.error(f"Failed to fetch user details: {e}")
+        
+        # Share the current client with the Bot UI
+        set_userbot_client(client, client_wrapper)
+        
+        # (Re)load plugins for this client instance
+        # We only reload if the client instance has actually changed
+        if not plugin_loader or plugin_loader.client != client:
+            logger.info(f"Plugins: (Re)loading for {'new ' if plugin_loader else ''}client instance...")
+            loader = PluginLoader(
+                client=client,
+                db=ether_db.db,
+                owner_id=Config.OWNER_ID
+            )
+            loader.load_all()
+            plugin_loader = loader
+            set_plugin_loader(loader)
+            
+            stats = loader.get_stats()
+            logger.info(f"Plugins: LOADED ({stats['total']} modules active)")
+        
+        logger.info("Userbot: RUNNING (Awaiting commands)")
+        
+        try:
+            # This blocks until the client is disconnected (e.g., by the login flow in bot.py)
+            await client.run_until_disconnected()
+        except Exception as e:
+            logger.error(f"Userbot execution error: {e}")
+            await asyncio.sleep(5)
+        
+        # If we reach here, the client was disconnected. 
+        # The loop will restart, get the new client (if any), and resume.
+        logger.info("Userbot: Loop exited. Re-evaluating client state...")
+        await asyncio.sleep(1)
 
 
 async def init_bot_identity():
