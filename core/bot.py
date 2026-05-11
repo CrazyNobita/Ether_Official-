@@ -78,6 +78,9 @@ main_buttons = [
     [
         Button.inline("⚡ Ping System", b"help_ping"),
         Button.inline("📊 System Info", b"help_system")
+    ],
+    [
+        Button.inline("👁️ Privacy & Logs", b"help_privacy")
     ]
 ]
 
@@ -88,8 +91,9 @@ HELP_DATA["buttons"] = main_buttons
 
 @bot.on(events.InlineQuery)
 async def inline_help(event):
+    builder = event.builder
+    
     if event.text == "help":
-        builder = event.builder
         
         result = builder.article(
             id="help_menu",
@@ -108,7 +112,6 @@ async def inline_help(event):
         logger.info(f"Welcome inline query from user {event.sender_id}")
         if WELCOME_DATA["text"]:
             try:
-                builder = event.builder
                 
                 buttons = None
                 if WELCOME_DATA["buttons"]:
@@ -173,8 +176,8 @@ async def inline_help(event):
         
         if shortcut_name in SHORTCUT_DATA:
             try:
-                builder = event.builder
                 shortcut = SHORTCUT_DATA[shortcut_name]
+                
                 
                 buttons = None
                 if shortcut.get("buttons"):
@@ -233,8 +236,6 @@ async def inline_help(event):
     elif event.text.startswith("fonts:"):
         try:
             text = event.text.replace("fonts:", "", 1)
-
-            builder = event.builder
 
             result_text = "🎭 <b>Font Styles</b>\n\n"
 
@@ -427,6 +428,26 @@ async def cb_system(event):
         "• Telethon\n"
         "• MongoDB\n"
         "• Plugins"
+        "</blockquote>",
+        buttons=[[Button.inline("🔙 Back", b"help_back")]]
+    )
+
+
+# ============================================
+
+@bot.on(events.CallbackQuery(data=b"help_privacy"))
+async def cb_privacy(event):
+    await event.edit(
+        "<blockquote>"
+        "👁️ <b>Privacy & Message Logs</b>\n\n"
+        "<b>Message Sniffer:</b>\n"
+        "The bot automatically tracks edited and deleted messages in your DMs and sends reports to your Saved Messages.\n\n"
+        "<b>Auto-Read:</b>\n"
+        "Marks all incoming DMs as read immediately.\n"
+        "• <code>.autoread on</code> - Enable\n"
+        "• <code>.autoread off</code> - Disable\n\n"
+        "<b>Command Help:</b>\n"
+        "<code>.commands</code> - See all system commands."
         "</blockquote>",
         buttons=[[Button.inline("🔙 Back", b"help_back")]]
     )

@@ -85,6 +85,10 @@ class EtherMongo:
     @property
     def dm_shield(self):
         return self.db["dm_shield"] if self.db else None
+
+    @property
+    def messages(self):
+        return self.db["messages"] if self.db else None
  
 # Global instance
 ether_db = EtherMongo()
