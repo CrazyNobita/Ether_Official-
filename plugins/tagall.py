@@ -82,7 +82,7 @@ def setup(ether, db, owner_id):
         
         # Check for stop command
         if cmd == "tagstop" or (arg and arg.lower() == "stop"):
-            tag_col.update_one({"chat_id": chat_id}, {"$set": {"active": False}})
+            await tag_col.update_one({"chat_id": chat_id}, {"$set": {"active": False}})
             msg = "Tagging Process" if cmd == "tagstop" else cmd.capitalize()
             await event.edit(f"<blockquote><b>Action Success:</b> {msg} has been terminated.</blockquote>")
             return
@@ -101,7 +101,7 @@ def setup(ether, db, owner_id):
             use_random = False
         
         # Check active status in DB
-        current = tag_col.find_one({"chat_id": chat_id})
+        current = await tag_col.find_one({"chat_id": chat_id})
         if current and current.get("active"):
             await event.edit(f"<blockquote><b>Process Error:</b> A tagging process is already running.</blockquote>")
             return
@@ -113,7 +113,7 @@ def setup(ether, db, owner_id):
         )
         
         # Set active in DB
-        tag_col.update_one({"chat_id": chat_id}, {"$set": {"active": True}}, upsert=True)
+        await tag_col.update_one({"chat_id": chat_id}, {"$set": {"active": True}}, upsert=True)
         
         try:
             users = []
@@ -131,7 +131,7 @@ def setup(ether, db, owner_id):
             
             for i in range(0, total, BATCH_SIZE):
                 # Check DB for cancellation
-                current_status = tag_col.find_one({"chat_id": chat_id})
+                current_status = await tag_col.find_one({"chat_id": chat_id})
                 if not current_status or not current_status.get("active"):
                     break
                 
@@ -170,14 +170,14 @@ def setup(ether, db, owner_id):
             result_text = f"<blockquote><b>{label} Completed</b>\nTagged: {sent} users</blockquote>"
             
             # Check if it was stopped
-            final_status = tag_col.find_one({"chat_id": chat_id})
+            final_status = await tag_col.find_one({"chat_id": chat_id})
             if not final_status or not final_status.get("active"):
                 result_text = f"<blockquote><b>{label} Stopped</b>\nTagged: {sent} users</blockquote>"
             
             await ether.send_message(chat_id, result_text)
             
         finally:
-            tag_col.update_one({"chat_id": chat_id}, {"$set": {"active": False}})
+            await tag_col.update_one({"chat_id": chat_id}, {"$set": {"active": False}})
             try:
                 await status_msg.delete()
             except:
