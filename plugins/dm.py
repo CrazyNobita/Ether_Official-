@@ -22,6 +22,7 @@
 from telethon import events, Button
 from telethon.tl.functions.contacts import BlockRequest
 import re
+import os
 
 from services.dm_service import DMService
 from utils.parser import parse_links
@@ -133,6 +134,10 @@ def setup(ether, db, owner_id):
         
         image_path = None
         media_type = "photo"
+        
+        # Create media directory if it doesn't exist
+        os.makedirs("media", exist_ok=True)
+        
         if msg.photo:
             try:
                 image_path = await msg.download_media(file="media/welcome.jpg")
@@ -142,15 +147,14 @@ def setup(ether, db, owner_id):
         elif msg.video:
             try:
                 image_path = await msg.download_media(file="media/welcome.mp4")
-                media_type = "video"
+                # Check for animation attribute to identify as GIF
+                from telethon.tl.types import DocumentAttributeAnimated
+                if msg.document and any(isinstance(a, DocumentAttributeAnimated) for a in msg.document.attributes):
+                    media_type = "gif"
+                else:
+                    media_type = "video"
             except Exception as e:
-                logger.error(f"Failed to download welcome video: {e}")
-        elif msg.gif:
-            try:
-                image_path = await msg.download_media(file="media/welcome.mp4")
-                media_type = "gif"
-            except Exception as e:
-                logger.error(f"Failed to download welcome gif: {e}")
+                logger.error(f"Failed to download welcome media: {e}")
         elif msg.document and any(msg.document.mime_type.startswith(t) for t in ['image/', 'video/']):
             try:
                 ext = ".jpg" if msg.document.mime_type.startswith('image/') else ".mp4"
@@ -162,21 +166,15 @@ def setup(ether, db, owner_id):
         from telethon.extensions import html
         
         if custom_text:
-            # If user provided text in the command itself
-            # We need to parse entities from the event message
-            if event.message.entities:
-                # We need to extract only the part after ".setwelcome "
-                # The pattern match group 1 is the text.
-                # Easier to just use the raw text and assume standard formatting if they type it.
-                parsed_text = custom_text
-            else:
-                parsed_text = custom_text
+            parsed_text = custom_text
         else:
-            # Fallback to replied message text/caption
             if msg.entities:
                 parsed_text = html.unparse(msg.text, msg.entities)
             else:
                 parsed_text = msg.text or ""
+        
+        # Save a copy for button parsing before stripping buttons from text
+        raw_text_for_buttons = parsed_text
         
         parsed_text = re.sub(r'\[Button\.(url|inline)\([^\]]+\)\]', '', parsed_text).strip()
         
@@ -195,20 +193,17 @@ def setup(ether, db, owner_id):
                         elif isinstance(btn, KeyboardButtonCallback):
                             row_buttons.append({"text": btn.text, "data": btn.data.decode(), "type": "callback"})
                     if row_buttons:
-                        button_rows.append(row)
+                        button_rows.append(row_buttons)
             
             if button_rows:
                 buttons = button_rows
         
         if not buttons:
-            text_content = msg.text or ""
-            
             button_pattern = r"\[Button\.(url|inline)\(['\"]([^'\"]+)['\"],\s*['\"]([^'\"]+)['\"]\)\]"
-            matches = re.findall(button_pattern, text_content)
-            
+            matches = re.findall(button_pattern, raw_text_for_buttons)
             
             if matches:
-                lines = text_content.split('\n')
+                lines = raw_text_for_buttons.split('\n')
                 button_rows = []
                 
                 for line in lines:
