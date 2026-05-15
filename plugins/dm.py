@@ -105,10 +105,12 @@ def setup(ether, db, owner_id):
 # Set Welcome Command
 # ============================================
 
-    @ether.on(events.NewMessage(pattern=r"^\.setwelcome$", outgoing=True))
+    @ether.on(events.NewMessage(pattern=r"^\.setwelcome(?:\s+(.*))?$", outgoing=True))
     async def setwelcome_handler(event):
         if event.sender_id != owner_id:
             return
+        
+        custom_text = event.pattern_match.group(1)
         
         if not event.is_reply:
             await event.reply(
@@ -158,10 +160,23 @@ def setup(ether, db, owner_id):
                 logger.error(f"Failed to download welcome document: {e}")
         
         from telethon.extensions import html
-        if msg.entities:
-            parsed_text = html.unparse(msg.text, msg.entities)
+        
+        if custom_text:
+            # If user provided text in the command itself
+            # We need to parse entities from the event message
+            if event.message.entities:
+                # We need to extract only the part after ".setwelcome "
+                # The pattern match group 1 is the text.
+                # Easier to just use the raw text and assume standard formatting if they type it.
+                parsed_text = custom_text
+            else:
+                parsed_text = custom_text
         else:
-            parsed_text = msg.text or ""
+            # Fallback to replied message text/caption
+            if msg.entities:
+                parsed_text = html.unparse(msg.text, msg.entities)
+            else:
+                parsed_text = msg.text or ""
         
         parsed_text = re.sub(r'\[Button\.(url|inline)\([^\]]+\)\]', '', parsed_text).strip()
         
