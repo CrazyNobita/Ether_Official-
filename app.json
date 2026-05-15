@@ -1,0 +1,54 @@
+{
+  "name": "Ether Userbot",
+  "description": "The Next-Gen Modular Telegram Framework based on Telethon and MongoDB.",
+  "repository": "https://github.com/LearningBotsOfficial/Ether",
+  "logo": "https://i.ibb.co/rKM4mfnx/x.jpg",
+  "keywords": [
+    "telegram",
+    "userbot",
+    "bot",
+    "modular",
+    "telethon",
+    "LearningBotsOfficial",
+    "mongodb"
+  ],
+  "env": {
+    "API_ID": {
+      "description": "Get it from https://my.telegram.org",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Get it from https://my.telegram.org",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Your numeric Telegram user ID.",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Your Bot token from @BotFather.",
+      "required": true
+    },
+    "MONGO_URI": {
+      "description": "MongoDB connection URL.",
+      "required": true
+    },
+    "WEB_SERVICE": {
+      "description": "Set to true to enable the keep-alive web service (requires 'web' process type).",
+      "value": "false",
+      "required": false
+    },
+    "SESSION_NAME": {
+      "description": "Custom session file name.",
+      "value": "etheruserbot",
+      "required": false
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "stack": "container"
+}

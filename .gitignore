@@ -1,6 +1,19 @@
 # Environment file
 .env
 
+# Session files
+*.session
+*.session-journal
+
+# Media and downloads
+media/
+downloads/
+storage/sessions/
+
+# Logs
+logs/
+*.log
+
 # Virtual environment
 venv/
 env/
@@ -11,9 +24,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Logs
-*.log
 
 # OS files
 .DS_Store

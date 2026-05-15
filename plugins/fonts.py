@@ -28,22 +28,15 @@ logger = get_logger("EtherFonts")
 
 def setup(ether, db, owner_id):
 
-    bot_username = Config.BOT_USERNAME or ""
-
-# ============================================
-# Fonts Command
-# ============================================
-
     @ether.on(events.NewMessage(pattern=r"^\.fonts (.+)$", outgoing=True))
     async def fonts_handler(event):
-
         if event.sender_id != owner_id:
             return
 
         text = event.pattern_match.group(1)
-
+        bot_username = Config.BOT_USERNAME
         if not bot_username:
-            await event.reply("❌ BOT_USERNAME not set.")
+            await event.reply("<blockquote><b>Identity Error:</b> BOT_USERNAME not fetched yet.</blockquote>")
             return
 
         try:
@@ -57,8 +50,8 @@ def setup(ether, db, owner_id):
             if results:
                 await results[0].click(event.chat_id)
             else:
-                await event.respond("❌ Inline failed.")
+                await event.respond("<blockquote><b>System Error:</b> Inline fonts failed.</blockquote>")
 
         except Exception as e:
             logger.error(f"Fonts error: {e}")
-            await event.respond("❌ Error while processing.")
+            await event.respond("<blockquote><b>System Error:</b> Failed to process font conversion.</blockquote>")

@@ -134,7 +134,27 @@ class DMService:
             {
                 "$set": {
                     "blocked": True,
-                    "allowed": False
+                    "allowed": False,
+                    "unblock_at": None # Permanent
+                }
+            },
+            upsert=True
+        )
+
+    async def temp_block_user(self, user_id: int, duration_secs: int) -> None:
+        if self.users is None:
+            return
+        
+        import time
+        unblock_at = time.time() + duration_secs
+        
+        await self.users.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "blocked": True,
+                    "allowed": False,
+                    "unblock_at": unblock_at
                 }
             },
             upsert=True
@@ -152,12 +172,12 @@ class DMService:
     
     async def get_welcome(self, owner_id: int) -> Dict[str, Any]:
         if self.config is None:
-            return {"text": "", "image": None, "buttons": None}
+            return {"text": "", "image": None, "buttons": None, "media_type": None}
         
         result = await self.config.find_one({"owner_id": owner_id})
-        return result or {"text": "", "image": None, "buttons": None}
+        return result or {"text": "", "image": None, "buttons": None, "media_type": None}
     
-    async def set_welcome(self, owner_id: int, text: str, image: Optional[str] = None, buttons: Optional[List[Dict[str, str]]] = None) -> None:
+    async def set_welcome(self, owner_id: int, text: str, image: Optional[str] = None, buttons: Optional[List[Dict[str, str]]] = None, media_type: Optional[str] = None) -> None:
         if self.config is None:
             return
         
@@ -172,6 +192,11 @@ class DMService:
         else:
             data["buttons"] = None
         
+        if media_type:
+            data["media_type"] = media_type
+        else:
+            data["media_type"] = "photo"
+        
         await self.config.update_one(
             {"owner_id": owner_id},
             {"$set": data},
@@ -183,3 +208,4 @@ class DMService:
             return
         
         await self.config.delete_one({"owner_id": owner_id})
+

@@ -25,20 +25,14 @@ import re
 from services.shortcut_service import ShortcutService
 from utils.parser import parse_links
 from utils.logger import get_logger
+from config.config import Config
 from core.bot import bot, SHORTCUT_DATA
 
 logger = get_logger("EtherShortcut")
 
 
 def setup(ether, db, owner_id):
-    
     shortcut_service = ShortcutService(db)
-    bot_username = None
-    try:
-        from config.config import Config
-        bot_username = Config.BOT_USERNAME
-    except:
-        pass
 
 # ============================================
 # Load Shortcuts Data
@@ -67,8 +61,8 @@ def setup(ether, db, owner_id):
         except Exception as e:
             logger.error(f"Failed to load shortcuts data: {e}")
     
-    import asyncio
-    asyncio.create_task(load_shortcuts_data())
+    from utils.task_helper import safe_run
+    safe_run(load_shortcuts_data(), name="LoadShortcutsData")
 
 
 # ============================================
@@ -85,23 +79,22 @@ def setup(ether, db, owner_id):
         if not event.is_reply:
             await event.reply(
                 "<blockquote>"
-                "⚠️ Reply to the message you want to save as a shortcut.\n\n"
-                "📝 <b>Supported Formatting:</b>\n"
+                "<b>Command Error:</b> Reply to the message you want to save as a shortcut.\n\n"
+                "<b>Supported Formatting:</b>\n"
                 "• <b>Bold:</b> Use <code>**text**</code> or <code>__text__</code>\n"
                 "• <i>Italic:</i> Use <code>__text__</code>\n"
                 "• <code>Code:</code> Use <code>`text`</code>\n\n"
-                "📎 <b>Supported Media:</b>\n"
+                "<b>Supported Media:</b>\n"
                 "• Images (photos)\n"
                 "• Audio files\n"
                 "• Videos\n"
                 "• Documents/Files (ZIP, PDF, etc.)\n"
                 "• Voice notes\n"
                 "• Stickers\n\n"
-                "📌 <b>Button Format:</b>\n"
+                "<b>Button Format:</b>\n"
                 "<code>[Button.url('Button Text', 'https://example.com')]</code>\n"
-                "💡 <b>Tip:</b> Include button code in your message text."
+                "<i>Tip:</i> Include button code in your message text."
                 "</blockquote>",
-                parse_mode="html"
             )
             return
         
@@ -149,14 +142,13 @@ def setup(ether, db, owner_id):
             except Exception as e:
                 logger.error(f"Failed to download shortcut sticker: {e}")
         
-        raw_text = msg.text or ""
-        parsed_text = parse_links(raw_text)
+        from telethon.extensions import html
+        if msg.entities:
+            parsed_text = html.unparse(msg.text, msg.entities)
+        else:
+            parsed_text = msg.text or ""
         
         parsed_text = re.sub(r'\[Button\.(url|inline)\([^\]]+\)\]', '', parsed_text).strip()
-        
-        parsed_text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', parsed_text)
-        parsed_text = re.sub(r'__(.+?)__', r'<i>\1</i>', parsed_text)
-        parsed_text = re.sub(r'`([^`]+)`', r'<code>\1</code>', parsed_text)
         
         buttons = None
         
@@ -222,17 +214,18 @@ def setup(ether, db, owner_id):
                 "buttons": buttons
             }
             
-            response = f"✅ Shortcut '{name}' saved."
+            response = f"<blockquote><b>Shortcut Saved:</b> '{name}'"
             if image_path:
-                response += "\n📷 Image included."
+                response += "\n• Image included."
             if file_path:
-                response += f"\n📎 {media_type or 'File'} included."
+                response += f"\n• {media_type.capitalize() or 'File'} included."
             if buttons:
-                response += f"\n🔘 {len(buttons)} button rows included."
+                response += f"\n• {len(buttons)} button rows included."
+            response += "</blockquote>"
             await event.edit(response)
         except Exception as e:
             logger.error(f"Failed to save shortcut: {e}")
-            await event.edit("❌ Failed to save shortcut.")
+            await event.edit("<blockquote><b>System Error:</b> Failed to save shortcut.</blockquote>")
 
 
 # ============================================
@@ -249,7 +242,7 @@ def setup(ether, db, owner_id):
         shortcut = await shortcut_service.get_shortcut(owner_id, name)
         
         if not shortcut:
-            await event.reply(f"<blockquote>❌ Shortcut '{name}' not found.</blockquote>", parse_mode="html")
+            await event.reply(f"<blockquote><b>Identity Error:</b> Shortcut '{name}' not found.</blockquote>")
             return
         
         text = shortcut.get("text", "")
@@ -261,6 +254,7 @@ def setup(ether, db, owner_id):
         async def send_shortcut_message(text: str, target_chat=None) -> None:
             try:
                 chat_id = target_chat or event.chat_id
+                bot_username = Config.BOT_USERNAME
                 
                 if bot_username and buttons:
                     
@@ -275,22 +269,22 @@ def setup(ether, db, owner_id):
                 
                 # Handle different media types when sending
                 if image:
-                    await ether.send_file(chat_id, file=image, caption=text, parse_mode="html")
+                    await ether.send_file(chat_id, file=image, caption=text)
                 elif file_path and media_type:
                     if media_type == "audio":
-                        await ether.send_file(chat_id, file=file_path, caption=text, parse_mode="html")
+                        await ether.send_file(chat_id, file=file_path, caption=text)
                     elif media_type == "video":
-                        await ether.send_file(chat_id, file=file_path, caption=text, parse_mode="html")
+                        await ether.send_file(chat_id, file=file_path, caption=text)
                     elif media_type == "document":
-                        await ether.send_file(chat_id, file=file_path, caption=text, parse_mode="html")
+                        await ether.send_file(chat_id, file=file_path, caption=text)
                     elif media_type == "voice":
-                        await ether.send_file(chat_id, file=file_path, caption=text, parse_mode="html", voice_note=True)
+                        await ether.send_file(chat_id, file=file_path, caption=text, voice_note=True)
                     elif media_type == "sticker":
                         await ether.send_file(chat_id, file=file_path)
                     else:
-                        await ether.send_file(chat_id, file=file_path, caption=text, parse_mode="html")
+                        await ether.send_file(chat_id, file=file_path, caption=text)
                 else:
-                    await ether.send_message(chat_id, text, parse_mode="html")
+                    await ether.send_message(chat_id, text)
             except Exception as e:
                 logger.error(f"Failed to send shortcut: {e}")
         
@@ -298,10 +292,10 @@ def setup(ether, db, owner_id):
             reply_msg = await event.get_reply_message()
             target_chat = reply_msg.chat_id
             await send_shortcut_message(text, target_chat)
-            await event.edit(f"✅ Shortcut '{name}' sent.")
+            await event.edit(f"<blockquote><b>Action Success:</b> Shortcut '{name}' sent.</blockquote>")
         else:
             await send_shortcut_message(text)
-            await event.edit(f"✅ Shortcut '{name}' sent.")
+            await event.edit(f"<blockquote><b>Action Success:</b> Shortcut '{name}' sent.</blockquote>")
 
 
 # ============================================
@@ -321,9 +315,9 @@ def setup(ether, db, owner_id):
             if name.lower() in SHORTCUT_DATA:
                 del SHORTCUT_DATA[name.lower()]
             
-            await event.edit(f"🗑️ Shortcut '{name}' deleted.")
+            await event.edit(f"<blockquote><b>Action Success:</b> Shortcut '{name}' deleted.</blockquote>")
         else:
-            await event.edit(f"❌ Shortcut '{name}' not found.")
+            await event.edit(f"<blockquote><b>Identity Error:</b> Shortcut '{name}' not found.</blockquote>")
 
     
 # ============================================
@@ -338,7 +332,7 @@ def setup(ether, db, owner_id):
         shortcuts = await shortcut_service.list_shortcuts(owner_id)
         
         if not shortcuts:
-            await event.reply("<blockquote>📭 No shortcuts saved yet.\n\nUse .shortcut <name> to save one.</blockquote>", parse_mode="html")
+            await event.reply("<blockquote><b>Identity Status:</b> No shortcuts saved yet.\n\nUse <code>.shortcut &lt;name&gt;</code> to save one.</blockquote>")
         else:
             shortcut_list = "\n".join(f"• <code>{s}</code>" for s in shortcuts)
-            await event.reply(f"<blockquote>📋 <b>Your Shortcuts:</b>\n\n{shortcut_list}\n\n<i>Total: {len(shortcuts)}</i></blockquote>", parse_mode="html")
+            await event.reply(f"<blockquote><b>Your Shortcuts:</b>\n\n{shortcut_list}\n\n<i>Total: {len(shortcuts)}</i></blockquote>")

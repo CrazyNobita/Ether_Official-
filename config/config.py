@@ -30,9 +30,15 @@ class Config:
     API_ID: int = int(os.getenv("API_ID", 0))
     API_HASH: str = os.getenv("API_HASH", "")
     OWNER_ID: int = int(os.getenv("OWNER_ID", 0))
+    OWNER_NAME: str = ""        # Auto-fetched (First Name)
+    OWNER_USERNAME: str = ""    # Auto-fetched
+    OWNER_MENTION: str = ""     # Auto-fetched ([Name](tg://user?id=123))
     
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
-    BOT_USERNAME: str = os.getenv("BOT_USERNAME", "")  # Without @, e.g. "Etheruserbot"
+    BOT_USERNAME: str = os.getenv("BOT_USERNAME", "")  # Auto-fetched
+    BOT_MENTION: str = ""       # Auto-fetched (@username)
+    
+    START_TIME: float = 0.0     # Set on startup
     
     SESSION_NAME: str = os.getenv("SESSION_NAME", "etheruserbot")
     SESSION_DIR: str = os.getenv("SESSION_DIR", "sessions")
@@ -40,10 +46,18 @@ class Config:
     MONGO_URI: str = os.getenv("MONGO_URI", "")
     DB_NAME: str = os.getenv("DB_NAME", "Ether")
     
+    
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
     # Dm Protection Settings
     DM_MAX_WARNS: int = int(os.getenv("DM_MAX_WARNS", "3"))
+    TEMP_BAN_DURATION: int = 43200 # 12 Hours
+    
+    # Web Service
+    # Auto-enable if PORT is provided by environment (common in cloud hosts like Render/Heroku)
+    _PORT_ENV = os.getenv("PORT")
+    WEB_SERVICE: bool = os.getenv("WEB_SERVICE", "true" if _PORT_ENV else "false").lower() == "true"
+    PORT: int = int(_PORT_ENV or os.getenv("PORT_VALUE", "8080"))
     
     @classmethod
     def validate(cls) -> None:

@@ -19,6 +19,8 @@
 #  Thank you for respecting open-source development.
 # =============================================================================
 
+import time
+import psutil
 import random
 import os
 import asyncio
@@ -35,10 +37,27 @@ from config.channels import get_channel_list, get_channels
 from utils.logger import get_logger
 from services.dm_shield_service import DMShieldService
 from core.user_client import EtherUserClient
+from storage.mongo import ether_db
 
 logger = get_logger("EtherBot")
 
 bot = TelegramClient('bot', Config.API_ID, Config.API_HASH)
+bot.parse_mode = 'html'
+ 
+def owner_only(func):
+    async def wrapper(event):
+        if event.sender_id != Config.OWNER_ID:
+            if isinstance(event, events.CallbackQuery.Event):
+                await event.answer("❌ This feature is for the owner only. Host your own bot to use it!", alert=True)
+            elif isinstance(event, events.InlineQuery.Event):
+                await event.answer([], switch_pm="❌ Access Denied", switch_pm_param="unauthorized")
+            elif event.is_private:
+                # We'll handle public /start separately, so this is for other private msgs
+                if not event.text.startswith(("/start", "/id")):
+                    await event.reply("<blockquote>❌ <b>Access Denied</b>\n\nThis is a private instance of Ether Userbot. Please host your own to access full features.</blockquote>", buttons=[Button.url("📁 Get Source", "https://github.com/LearningBotsOfficial/Ether")])
+            return
+        return await func(event)
+    return wrapper
 
 # Store login state temporarily
 login_state = {}
@@ -47,14 +66,15 @@ userbot_wrapper = None
 plugin_loader = None
 
 HELP_DATA = {
-    "text": "<blockquote>🔥 <b>Ether Userbot Help</b></blockquote>",
+    "text": "<blockquote><b>Ether Userbot Help</b></blockquote>",
     "buttons": None
 }
 
 WELCOME_DATA = {
     "text": None,
     "image": None,
-    "buttons": None
+    "buttons": None,
+    "media_type": "photo"
 }
 
 SHORTCUT_DATA = {}
@@ -62,19 +82,22 @@ SHORTCUT_DATA = {}
 
 main_buttons = [
     [
-        Button.inline("🛡️ DM Protection", b"help_dm"),
-        Button.inline("📁 Shortcuts", b"help_shortcut")
+        Button.inline("DM Protection", b"help_dm"),
+        Button.inline("Shortcuts", b"help_shortcut")
     ],
     [
-        Button.inline("👥 TagAll", b"help_tagall"),
-        Button.inline("🎭 Fonts", b"help_fonts")
+        Button.inline("TagAll", b"help_tagall"),
+        Button.inline("Fonts", b"help_fonts")
     ],
     [
-        Button.inline("🛡️ DM Shield", b"help_shield"),
+        Button.inline("DM Shield", b"help_shield"),
     ],
     [
-        Button.inline("⚡ Ping System", b"help_ping"),
-        Button.inline("📊 System Info", b"help_system")
+        Button.inline("Ping System", b"help_ping"),
+        Button.inline("System Info", b"help_system")
+    ],
+    [
+        Button.inline("Privacy & Logs", b"help_privacy")
     ]
 ]
 
@@ -84,17 +107,18 @@ HELP_DATA["buttons"] = main_buttons
 # ============================================
 
 @bot.on(events.InlineQuery)
+@owner_only
 async def inline_help(event):
+    builder = event.builder
+    
     if event.text == "help":
-        builder = event.builder
         
         result = builder.article(
             id="help_menu",
             title="Ether Help Menu",
             description="Click to see help with buttons",
-            text="<blockquote>🔥 <b>Ether Userbot Help</b>\n\nSelect a feature below:</blockquote>",
-            buttons=main_buttons,
-            parse_mode="html"
+            text="<blockquote><b>Ether Userbot Help</b>\n\nSelect a feature below:</blockquote>",
+            buttons=main_buttons
         )
         
         await event.answer([result], cache_time=0)
@@ -106,7 +130,6 @@ async def inline_help(event):
         logger.info(f"Welcome inline query from user {event.sender_id}")
         if WELCOME_DATA["text"]:
             try:
-                builder = event.builder
                 
                 buttons = None
                 if WELCOME_DATA["buttons"]:
@@ -141,21 +164,42 @@ async def inline_help(event):
                 
                 
                 if WELCOME_DATA["image"]:
-                    result = builder.photo(
-                        file=WELCOME_DATA["image"],
-                        id="welcome_msg",
-                        text=WELCOME_DATA["text"],
-                        buttons=buttons,
-                        parse_mode="html"
-                    )
+                    media_type = WELCOME_DATA.get("media_type", "photo")
+                    raw_text = WELCOME_DATA["text"] or ""
+                    
+                    if media_type == "video":
+                        result = builder.video(
+                            file=WELCOME_DATA["image"],
+                            id="welcome_msg",
+                            text=raw_text,
+                            parse_mode='html',
+                            buttons=buttons
+                        )
+                    elif media_type == "gif":
+                        result = builder.gif(
+                            file=WELCOME_DATA["image"],
+                            id="welcome_msg",
+                            text=raw_text,
+                            parse_mode='html',
+                            buttons=buttons
+                        )
+                    else: # Default to photo
+                        result = builder.photo(
+                            file=WELCOME_DATA["image"],
+                            id="welcome_msg",
+                            text=raw_text,
+                            parse_mode='html',
+                            buttons=buttons
+                        )
                 else:
+                    raw_text = WELCOME_DATA["text"] or ""
                     result = builder.article(
                         id="welcome_msg",
                         title="Welcome Message",
                         description="DM Protection Welcome",
-                        text=WELCOME_DATA["text"],
-                        buttons=buttons,
-                        parse_mode="html"
+                        text=raw_text,
+                        parse_mode='html',
+                        buttons=buttons
                     )
                 
                 await event.answer([result], cache_time=0)
@@ -173,8 +217,8 @@ async def inline_help(event):
         
         if shortcut_name in SHORTCUT_DATA:
             try:
-                builder = event.builder
                 shortcut = SHORTCUT_DATA[shortcut_name]
+                
                 
                 buttons = None
                 if shortcut.get("buttons"):
@@ -209,8 +253,7 @@ async def inline_help(event):
                         file=image,
                         id=f"shortcut_{shortcut_name}",
                         text=text,
-                        buttons=buttons,
-                        parse_mode="html"
+                        buttons=buttons
                     )
                 else:
                     result = builder.article(
@@ -218,8 +261,7 @@ async def inline_help(event):
                         title=f"Shortcut: {shortcut_name}",
                         description="Saved shortcut content",
                         text=text,
-                        buttons=buttons,
-                        parse_mode="html"
+                        buttons=buttons
                     )
                 
                 await event.answer([result], cache_time=0)
@@ -236,18 +278,16 @@ async def inline_help(event):
         try:
             text = event.text.replace("fonts:", "", 1)
 
-            builder = event.builder
-
-            result_text = "🎭 <b>Font Styles</b>\n\n"
+            result_text = "<b>Font Styles</b>\n\n"
 
             for key in FONT_MAPS:
                 styled = apply_font(text, key)
-                result_text += f"{key} → <code>{styled}</code>\n"
+                result_text += f"{key} -> <code>{styled}</code>\n"
 
             buttons = [
                 [
-                    Button.inline("✨ Style", f"font_style:{text}".encode()),
-                    Button.inline("🎲 Mix", f"font_mix:{text}".encode())
+                    Button.inline("Style", f"font_style:{text}".encode()),
+                    Button.inline("Mix", f"font_mix:{text}".encode())
                 ]
             ]
 
@@ -256,8 +296,7 @@ async def inline_help(event):
                 title="Font Styles",
                 description="Preview styled text",
                 text=result_text,
-                buttons=buttons,
-                parse_mode="html"
+                buttons=buttons
             )
 
             await event.answer([result], cache_time=0)
@@ -268,27 +307,41 @@ async def inline_help(event):
 # ============================================
 
     elif event.text == "alive":
-        builder = event.builder
-    
+        bot_info = Config.BOT_MENTION or "Bot"
+        
+        # Calculate Uptime
+        uptime_seconds = int(time.time() - Config.START_TIME)
+        days, remainder = divmod(uptime_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        uptime = f"{days}d {hours}h {minutes}m {seconds}s"
+        
+        # System Stats
+        cpu = psutil.cpu_percent()
+        ram = psutil.virtual_memory().percent
+        disk = psutil.disk_usage('/').percent
+        
         result = builder.photo(
             file="assets/ether_logo.png",
             text=(
-                "⚡ <b>Ether Userbot is Alive</b>\n\n"
+                "<b>Ether Userbot is Alive</b>\n\n"
                 "<blockquote>"
-                "🟢 Status: ONLINE\n"
-                "⚙️ System: RUNNING\n"
-                "🛡️ DM Shield: ACTIVE\n"
-                "📡 Telethon: CONNECTED\n"
-                "💾 Database: STABLE\n"
+                f"Client: {bot_info}\n"
+                "Status: ONLINE\n"
+                f"Uptime: {uptime}\n"
+                f"CPU: {cpu}%\n"
+                f"RAM: {ram}%\n"
+                f"Disk: {disk}%\n"
+                "Telethon: CONNECTED\n"
+                "Database: STABLE\n"
                 "</blockquote>\n\n"
-                "🚀 <i>All systems operational</i>"
+                "<i>All systems operational</i>"
             ),
             buttons=[
                 [
-                    Button.url("📂 Repository", "https://github.com/LearningBotsOfficial/Ether")
+                    Button.url("Repository", "https://github.com/LearningBotsOfficial/Ether")
                 ]
-            ],
-            parse_mode="html"
+            ]
         )
 
         await event.answer([result], cache_time=0)
@@ -300,50 +353,46 @@ async def inline_help(event):
 # ============================================
 
 @bot.on(events.CallbackQuery(data=b"help_back"))
+@owner_only
 async def cb_back(event):
     await event.edit(
-        "<blockquote>🔥 <b>Ether Userbot Help</b>\n\nSelect a feature below:</blockquote>",
-        buttons=main_buttons,
-        parse_mode="html"
+        "<blockquote><b>Ether Userbot Help</b>\n\nSelect a feature below:</blockquote>",
+        buttons=main_buttons
     )
 
 # ============================================
 
 @bot.on(events.CallbackQuery(data=b"help_dm"))
+@owner_only
 async def cb_dm(event):
     await event.edit(
         "<blockquote>"
-        "🛡️ <b>DM Protection System</b>\n\n"
+        "<b>DM Protection System</b>\n\n"
         "<b>Overview:</b>\n"
         "When someone messages you:\n"
-        "1️⃣ First message → Welcome message sent\n"
-        "2️⃣ Follow-ups → Warning counter (max 3)\n"
-        "3️⃣ After max warnings → Auto block\n\n"
+        "• First message → Welcome message sent\n"
+        "• Follow-ups → Silently ignored until allowed\n\n"
         "Only users you <code>.allow</code> can message freely.\n\n"
         "<b>Commands:</b>\n"
         "<code>.setwelcome</code> - Set welcome message with buttons\n"
         "<code>.clearwelcome</code> - Remove welcome message\n"
         "<code>.allow</code> - Allow user (in their DM)\n"
-        "<code>.disallow</code> - Disallow user (in their DM)\n"
-        "<code>.setwarn &lt;number&gt;</code> - Set max warnings\n\n"
-        "<b>Warning System:</b>\n"
-        "Users who aren't allowed get:\n"
-        "• Welcome on 1st message\n"
-        "• Warning X/N on follow-ups\n"
-        "• <b>Auto-block</b> at max warnings\n\n"
-        "Use <code>.setwarn &lt;number&gt;</code> to change limit"
+        "<code>.disallow</code> - Disallow user (in their DM)\n\n"
+        "<b>Status:</b>\n"
+        "Users who aren't allowed get the welcome on their first message. "
+        "Further messages are ignored to prevent spam."
         "</blockquote>",
-        buttons=[[Button.inline("🔙 Back", b"help_back")]],
-        parse_mode="html"
+        buttons=[[Button.inline("Back", b"help_back")]]
     )
 
 # ============================================
 
 @bot.on(events.CallbackQuery(data=b"help_shortcut"))
+@owner_only
 async def cb_shortcut(event):
     await event.edit(
         "<blockquote>"
-        "📁 <b>Shortcuts System</b>\n\n"
+        "<b>Shortcuts System</b>\n\n"
         "<b>Overview:</b>\n"
         "Save messages, images, and buttons with custom names for quick access.\n"
         "• <b>Text:</b> Save formatted text with bold, italic, code\n"
@@ -363,42 +412,46 @@ async def cb_shortcut(event):
         "• Button format: <code>[Button.url('Text', 'URL')]</code>\n"
         "• Button format: <code>[Button.inline('Text', 'data')]</code>"
         "</blockquote>",
-        buttons=[[Button.inline("🔙 Back", b"help_back")]],
-        parse_mode="html"
+        buttons=[[Button.inline("Back", b"help_back")]]
     )
 
 # ============================================
 
 @bot.on(events.CallbackQuery(data=b"help_tagall"))
+@owner_only
 async def cb_tagall(event):
     await event.edit(
         "<blockquote>"
-        "👥 <b>TagAll </b>\n\n"
+        "<b>TagAll</b>\n\n"
         "Mention group members in small batches with delay to avoid spam and limits.\n\n"
         
-        "<b>Command:</b>\n"
-        "<code>.tagall</code>\n\n"
+        "<b>Commands:</b>\n"
+        "• <code>.tagall &lt;msg&gt;</code>\n"
+        "• <code>.gmtag &lt;msg&gt;</code> (Morning greeting)\n"
+        "• <code>.gntag &lt;msg&gt;</code> (Night greeting)\n\n"
         
-        "<b>Example:</b>\n"
-        "<code>.tagall Hello everyone!</code>\n\n"
+        "<b>Examples:</b>\n"
+        "• <code>.tagall Wake up!</code>\n"
+        "• <code>.gmtag</code> (Uses 'Good Morning!')\n"
+        "• <code>.gntag sleep tight</code>\n\n"
         
         "<b>Tips:</b>\n"
         "• Works only in groups\n"
         "• Skips bots & deleted users\n"
-        "• Uses safe limits to protect your account"
+        "• Use <code>.tagstop</code> or <code>.&lt;cmd&gt; stop</code> to cancel"
         "</blockquote>",
         
-        buttons=[[Button.inline("🔙 Back", b"help_back")]],
-        parse_mode="html"
+        buttons=[[Button.inline("Back", b"help_back")]]
     )
 
 # ============================================
 
 @bot.on(events.CallbackQuery(data=b"help_ping"))
+@owner_only
 async def cb_ping(event):
     await event.edit(
         "<blockquote>"
-        "⚡ <b>Ping System</b>\n\n"
+        "<b>Ping System</b>\n\n"
         "<b>Overview:</b>\n"
         "The ping command measures how quickly the userbot responds.\n"
         "Lower = better.\n\n"
@@ -406,33 +459,49 @@ async def cb_ping(event):
         "<code>.ping</code> - Check response time\n\n"
         "Returns time in milliseconds."
         "</blockquote>",
-        buttons=[[Button.inline("🔙 Back", b"help_back")]],
-        parse_mode="html"
+        buttons=[[Button.inline("Back", b"help_back")]]
     )
 
 # ============================================
 
 @bot.on(events.CallbackQuery(data=b"help_system"))
+@owner_only
 async def cb_system(event):
     await event.edit(
         "<blockquote>"
-        "📊 <b>System Information</b>\n\n"
-        "Ether Userbot v2.0\n"
-        "• Telethon\n"
-        "• MongoDB\n"
-        "• Plugins"
+        "<b>System Management</b>\n\n"
+        "• <code>.ping</code> - Check latency\n"
+        "• <code>.alive</code> - Check system status\n"
+        "• <code>.restart</code> - Reboot Ether\n"
+        "• <code>.afk</code> - Go away silently\n"
+        "• <code>.status</code> - Check away duration\n"
+        "• <code>.id</code> - Get chat/user IDs"
         "</blockquote>",
-        buttons=[[Button.inline("🔙 Back", b"help_back")]],
-        parse_mode="html"
+        buttons=[[Button.inline("Back", b"help_back")]]
+    )
+
+
+# ============================================
+
+@bot.on(events.CallbackQuery(data=b"help_privacy"))
+@owner_only
+async def cb_privacy(event):
+    await event.edit(
+        "<blockquote>"
+        "<b>Self-Destruct:</b>\n"
+        "• <code>.sd &lt;secs&gt; &lt;text&gt;</code> - Send vanishing text"
+        "</blockquote>",
+        buttons=[[Button.inline("Back", b"help_back")]]
     )
 
 # ============================================
 
 @bot.on(events.CallbackQuery(data=b"help_fonts"))
+@owner_only
 async def cb_fonts(event):
     await event.edit(
         "<blockquote>"
-        "🎭 <b>Fonts & Styles System</b>\n\n"
+        "<b>Fonts & Styles System</b>\n\n"
         "<b>Overview:</b>\n"
         "Convert normal text into stylish fonts and modern effects.\n"
         "Includes aesthetic, glitch, hacker, and decorative styles.\n\n"
@@ -456,13 +525,13 @@ async def cb_fonts(event):
         "• Combine with shortcuts for fast reuse"
         "</blockquote>",
         
-        buttons=[[Button.inline("🔙 Back", b"help_back")]],
-        parse_mode="html"
+        buttons=[[Button.inline("Back", b"help_back")]]
     )
 
 # ============================================
 
 @bot.on(events.CallbackQuery(pattern=b"font_.*"))
+@owner_only
 async def font_callbacks(event):
 
     data = event.data.decode()
@@ -472,13 +541,13 @@ async def font_callbacks(event):
 
         result = (
             "<blockquote>"
-            f"✨ <code>{text}</code>\n"
-            f"🔥 <code>{apply_font(text,'2')}</code>\n"
-            f"❤️ <code>{apply_font(text,'3')}</code>"
+            f"<code>{text}</code>\n"
+            f"<code>{apply_font(text,'2')}</code>\n"
+            f"<code>{apply_font(text,'3')}</code>"
             "</blockquote>"
         )
 
-        await event.edit(result, parse_mode="html")
+        await event.edit(result)
 
     elif data.startswith("font_mix:"):
         text = data.split(":", 1)[1]
@@ -492,27 +561,28 @@ async def font_callbacks(event):
                 mixed += char
 
         await event.edit(
-            f"<blockquote>"
-            f"🎲 <b>Mixed Style</b>\n\n<code>{mixed}</code>"
-            "</blockquote>",
-            parse_mode="html"
+            "<blockquote>"
+            "<b>Mixed Style</b>\n\n"
+            f"<code>{mixed}</code>"
+            "</blockquote>"
         )
 
 # ============================================
 
 @bot.on(events.CallbackQuery(data=b"help_shield"))
+@owner_only
 async def cb_shield(event):
 
     await event.edit(
         "<blockquote>"
-        "🛡️ <b>DM Shield System</b>\n\n"
+        "<b>DM Shield System</b>\n\n"
         
         "<b>Overview:</b>\n"
         "Automatically protects your DM from unwanted messages.\n\n"
         
         "<b>What it blocks:</b>\n"
-        "🔗 Links (t.me, https, tg://)\n"
-        "👤 Usernames (@spam tags)\n\n"
+        "• Links (t.me, https, tg://)\n"
+        "• Usernames (@spam tags)\n\n"
         
         "<b>Commands:</b>\n"
         "<code>.shield</code> - Open control panel\n"
@@ -528,8 +598,7 @@ async def cb_shield(event):
         "Use allow system to whitelist trusted users."
         "</blockquote>",
         
-        buttons=[[Button.inline("🔙 Back", b"help_back")]],
-        parse_mode="html"
+        buttons=[[Button.inline("Back", b"help_back")]]
     )
 
 # ============================================
@@ -538,11 +607,11 @@ async def cb_shield(event):
 
 BOT_WELCOME_TEXT = (
     "<blockquote>"
-    "⚡ <b>Welcome to Ether Userbot</b>\n\n"
+    "<b>Ether Userbot</b>\n\n"
     "A fast, modern Telegram userbot built for automation and control.\n\n"
-    "🔒 <b>Security:</b> 99% safe — no need to generate session strings from unknown sources.\n"
+    "<b>Security:</b> 99% safe — no need to generate session strings from unknown sources.\n"
     "For full transparency, check the source code below.\n\n"
-    "🚀 Manage Telegram like a pro."
+    "Manage Telegram like a pro."
     "</blockquote>"
 )
 
@@ -550,10 +619,10 @@ BOT_WELCOME_IMAGE = "assets/ether_logo.png"
 
 bot_dm_buttons = [
     [
-        Button.url("📢 Updates", "https://t.me/Ether_Update"),
-        Button.url("💬 Support Group", "https://t.me/EtherSupport")
+        Button.url("Updates", "https://t.me/Ether_Update"),
+        Button.url("Support Group", "https://t.me/EtherSupport")
     ],
-    [Button.url("📂 Source Code", "https://github.com/LearningBotsOfficial/Ether")],
+    [Button.url("Source Code", "https://github.com/LearningBotsOfficial/Ether")],
 ]
 
 # ============================================
@@ -562,13 +631,23 @@ bot_dm_buttons = [
 
 @bot.on(events.NewMessage(pattern=r"^/start$", incoming=True, func=lambda e: e.is_private))
 async def bot_start_handler(event):
+    if event.sender_id != Config.OWNER_ID:
+        await event.reply(
+            "<blockquote><b>Welcome to Ether Userbot</b>\n\n"
+            "This is a private instance of Ether. If you want your own powerful userbot, click the button below to get the source code and host it yourself!</blockquote>",
+            buttons=[
+                [Button.url("Source", "https://github.com/LearningBotsOfficial/Ether")],
+                [Button.url("Updates", "https://t.me/Ether_Update"), Button.url("Support", "https://t.me/Ether_Support")]
+            ]
+        )
+        return
+
     try:
         await bot.send_file(
             event.chat_id,
             file=BOT_WELCOME_IMAGE,
             caption=BOT_WELCOME_TEXT,
-            buttons=bot_dm_buttons,
-            parse_mode="html"
+            buttons=bot_dm_buttons
         )
 
     except Exception as e:
@@ -578,8 +657,7 @@ async def bot_start_handler(event):
             await bot.send_message(
                 event.chat_id,
                 BOT_WELCOME_TEXT,
-                buttons=bot_dm_buttons,
-                parse_mode="html"
+                buttons=bot_dm_buttons
             )
             logger.info(f"Bot /start fallback sent to user {event.sender_id}")
         except Exception as e2:
@@ -590,26 +668,34 @@ async def bot_start_handler(event):
 # Bot Login Handler
 # ============================================
 
+@bot.on(events.NewMessage(pattern=r"^/id$", incoming=True))
+async def bot_id_handler(event):
+    await event.reply(f"<blockquote><b>Your ID:</b> <code>{event.sender_id}</code>\n<b>Chat ID:</b> <code>{event.chat_id}</code></blockquote>")
+
+# ============================================
+# Administrative Commands (Owner Only)
+# ============================================
+
 @bot.on(events.NewMessage(pattern=r"^/login$", incoming=True, func=lambda e: e.is_private))
+@owner_only
 async def bot_login_handler(event):
     if event.sender_id != Config.OWNER_ID:
-        await event.reply("<blockquote>❌ This command is only for the admin.</blockquote>", parse_mode="html")
+        await event.reply("<blockquote><b>Access Denied:</b> This command is only for the admin.</blockquote>")
         return
     
     if userbot_client is None:
-        await event.reply("❌ Userbot client not initialized. Please restart the bot.")
+        await event.reply("<blockquote><b>System Error:</b> Userbot client not initialized. Please restart the bot.</blockquote>")
         return
     
     login_state[Config.OWNER_ID] = {"step": "phone"}
     
     await event.reply(
         "<blockquote>"
-        "🔐 <b>Ether Login System</b>\n\n"
+        "<b>Ether Login System</b>\n\n"
         "Please enter your phone number with country code.\n\n"
         "<i>Example: +9198*****</i>\n\n"
         "Send /cancel to abort."
-        "</blockquote>",
-        parse_mode="html"
+        "</blockquote>"
     )
     logger.info(f"Login initiated by owner {Config.OWNER_ID}")
 
@@ -619,13 +705,35 @@ async def bot_login_handler(event):
 # ============================================
 
 @bot.on(events.NewMessage(pattern=r"^/cancel$", incoming=True, func=lambda e: e.is_private))
+@owner_only
 async def bot_cancel_handler(event):
     if event.sender_id != Config.OWNER_ID:
         return
     
     if Config.OWNER_ID in login_state:
         del login_state[Config.OWNER_ID]
-        await event.reply("<blockquote>❌ Login cancelled.</blockquote>", parse_mode="html")
+        await event.reply("<blockquote><b>Session Action:</b> Login cancelled.</blockquote>")
+
+
+# ============================================
+# Bot Restart Handler
+# ============================================
+
+@bot.on(events.NewMessage(pattern=r"^/restart$", incoming=True, func=lambda e: e.is_private))
+@owner_only
+async def bot_restart_handler(event):
+    if event.sender_id != Config.OWNER_ID:
+        return
+        
+    await event.reply("<blockquote><b>System Restart Initiated</b>\n\nThe bot is restarting now...</blockquote>")
+    
+    # Give it a moment
+    await asyncio.sleep(2)
+    
+    import sys
+    import os
+    logger.info("Restarting system via Bot UI /restart command")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 # ============================================
@@ -633,6 +741,7 @@ async def bot_cancel_handler(event):
 # ============================================
 
 @bot.on(events.NewMessage(incoming=True, func=lambda e: e.is_private))
+@owner_only
 async def bot_login_flow_handler(event):
     global userbot_client, userbot_wrapper
     
@@ -670,17 +779,16 @@ async def bot_login_flow_handler(event):
                 f"<blockquote>"
                 f"📩 Send OTP with spaces (e.g. 1 2 3 4 5)\n\n"
                 "Send /cancel to abort."
-                "</blockquote>",
-                parse_mode="html"
+                "</blockquote>"
             )
             logger.info(f"OTP sent to {phone}")
         except FloodWaitError as e:
             del login_state[Config.OWNER_ID]
-            await event.reply(f"<blockquote>⏳ <b>Flood Wait</b>\n\nPlease wait {e.seconds} seconds before trying again.</blockquote>", parse_mode="html")
+            await event.reply(f"<blockquote>⏳ <b>Flood Wait</b>\n\nPlease wait {e.seconds} seconds before trying again.</blockquote>")
             logger.warning(f"Flood wait: {e.seconds}s")
         except Exception as e:
             del login_state[Config.OWNER_ID]
-            await event.reply(f"<blockquote>❌ <b>Error</b>\n\nFailed to send OTP: {str(e)}</blockquote>", parse_mode="html")
+            await event.reply(f"<blockquote>❌ <b>Error</b>\n\nFailed to send OTP: {str(e)}</blockquote>")
             logger.error(f"OTP send error: {e}")
     
     elif state["step"] == "otp":
@@ -700,11 +808,13 @@ async def bot_login_flow_handler(event):
             del login_state[Config.OWNER_ID]
             
             await asyncio.sleep(1)
+            # Capture session string BEFORE disconnecting so it isn't lost
+            _saved_session = userbot_client.session.save() if userbot_client.session else None
             await userbot_client.disconnect()
             
             if userbot_wrapper:
-                userbot_wrapper._client = None
-                userbot_client = userbot_wrapper.get_client()
+                # Re-initialize with the authenticated session string
+                userbot_client = userbot_wrapper.init_client(_saved_session)
                 await userbot_client.connect()
                 logger.info("Userbot client recreated and reconnected after login")
             else:
@@ -714,7 +824,11 @@ async def bot_login_flow_handler(event):
             # Verify authorization
             is_authorized = await userbot_client.is_user_authorized()
             if is_authorized:
-                logger.info("Userbot session verified as authorized")
+                me = await userbot_client.get_me()
+                Config.OWNER_NAME = me.first_name
+                Config.OWNER_USERNAME = me.username
+                Config.OWNER_MENTION = f"<a href='tg://user?id={me.id}'>{me.first_name}</a>"
+                logger.info(f"Userbot session verified as authorized: {Config.OWNER_NAME} (@{me.username})")
             else:
                 logger.warning("Userbot session not authorized after reconnection")
             
@@ -737,15 +851,6 @@ async def bot_login_flow_handler(event):
             except Exception as e:
                 logger.error(f"Channel auto-join failed: {e}")
             
-            # Reload plugins with new client instance
-            if plugin_loader:
-                plugin_loader.client = userbot_client
-                plugin_loader.load_all()
-                stats = plugin_loader.get_stats()
-                logger.info(f"Reloaded {stats['total']} plugins after login: {stats['plugins']}")
-            else:
-                logger.warning("Plugin loader not available - commands may not work")
-            
             await event.reply(
                 "<blockquote>"
                 "✅ <b>Login Successful!</b>\n\n"
@@ -753,10 +858,20 @@ async def bot_login_flow_handler(event):
                 "The userbot has been reconnected.\n"
                 "Joined official channels automatically.\n\n"
                 "You can now use all commands."
-                "</blockquote>",
-                parse_mode="html"
+                "</blockquote>"
             )
             logger.info("Login successful")
+
+            # ── Persist Session to MongoDB ────────────────────────────────────
+            try:
+                if userbot_wrapper:
+                    session_str = userbot_wrapper.get_session_string()
+                    if session_str:
+                        await ether_db.save_session(Config.SESSION_NAME, session_str)
+                        logger.info("Session: SAVED to database after OTP login.")
+            except Exception as db_err:
+                logger.warning(f"Session save failed (non-critical): {db_err}")
+            # ─────────────────────────────────────────────────────────────────
         except SessionPasswordNeededError:
             state["step"] = "2fa"
             await event.reply(
@@ -764,21 +879,20 @@ async def bot_login_flow_handler(event):
                 "🔐 <b>2FA Required</b>\n\n"
                 "Please enter your two-factor authentication password.\n\n"
                 "Send /cancel to abort."
-                "</blockquote>",
-                parse_mode="html"
+                "</blockquote>"
             )
             logger.info("2FA required")
         except PhoneCodeInvalidError:
             del login_state[Config.OWNER_ID]
-            await event.reply("<blockquote>❌ <b>Invalid Code</b>\n\nThe OTP you entered is incorrect. Please try /login again.</blockquote>", parse_mode="html")
+            await event.reply("<blockquote>❌ <b>Invalid Code</b>\n\nThe OTP you entered is incorrect. Please try /login again.</blockquote>")
             logger.warning("Invalid OTP entered")
         except PhoneCodeExpiredError:
             del login_state[Config.OWNER_ID]
-            await event.reply("<blockquote>❌ <b>Code Expired</b>\n\nThe OTP has expired. Please try /login again.</blockquote>", parse_mode="html")
+            await event.reply("<blockquote>❌ <b>Code Expired</b>\n\nThe OTP has expired. Please try /login again.</blockquote>")
             logger.warning("OTP expired")
         except Exception as e:
             del login_state[Config.OWNER_ID]
-            await event.reply(f"<blockquote>❌ <b>Error</b>\n\nFailed to verify OTP: {str(e)}</blockquote>", parse_mode="html")
+            await event.reply(f"<blockquote>❌ <b>Error</b>\n\nFailed to verify OTP: {str(e)}</blockquote>")
             logger.error(f"OTP verify error: {e}")
     
     elif state["step"] == "2fa":
@@ -795,11 +909,13 @@ async def bot_login_flow_handler(event):
             del login_state[Config.OWNER_ID]
             
             await asyncio.sleep(1)
+            # Capture session string BEFORE disconnecting so it isn't lost
+            _saved_session = userbot_client.session.save() if userbot_client.session else None
             await userbot_client.disconnect()
             
             if userbot_wrapper:
-                userbot_wrapper._client = None
-                userbot_client = userbot_wrapper.get_client()
+                # Re-initialize with the authenticated session string
+                userbot_client = userbot_wrapper.init_client(_saved_session)
                 await userbot_client.connect()
                 logger.info("Userbot client recreated and reconnected after 2FA login")
             else:
@@ -808,7 +924,11 @@ async def bot_login_flow_handler(event):
             
             is_authorized = await userbot_client.is_user_authorized()
             if is_authorized:
-                logger.info("Userbot session verified as authorized (2FA)")
+                me = await userbot_client.get_me()
+                Config.OWNER_NAME = me.first_name
+                Config.OWNER_USERNAME = me.username
+                Config.OWNER_MENTION = f"<a href='tg://user?id={me.id}'>{me.first_name}</a>"
+                logger.info(f"Userbot session verified as authorized (2FA): {Config.OWNER_NAME} (@{me.username})")
             else:
                 logger.warning("Userbot session not authorized after 2FA reconnection")
             
@@ -830,27 +950,29 @@ async def bot_login_flow_handler(event):
             except Exception as e:
                 logger.error(f"Channel auto-join failed (2FA): {e}")
             
-            if plugin_loader:
-                plugin_loader.client = userbot_client
-                plugin_loader.load_all()
-                stats = plugin_loader.get_stats()
-                logger.info(f"Reloaded {stats['total']} plugins after 2FA login: {stats['plugins']}")
-            else:
-                logger.warning("Plugin loader not available - commands may not work")
-            
             await event.reply(
                 "<blockquote>"
                 "✅ <b>Login Successful!</b>\n\n"
                 "Your session has been created with 2FA.\n"
                 "The userbot has been reconnected.\n"
                 "You can now use all commands."
-                "</blockquote>",
-                parse_mode="html"
+                "</blockquote>"
             )
             logger.info("2FA login successful")
+
+            # ── Persist Session to MongoDB ────────────────────────────────────
+            try:
+                if userbot_wrapper:
+                    session_str = userbot_wrapper.get_session_string()
+                    if session_str:
+                        await ether_db.save_session(Config.SESSION_NAME, session_str)
+                        logger.info("Session: SAVED to database after 2FA login.")
+            except Exception as db_err:
+                logger.warning(f"Session save failed (non-critical): {db_err}")
+            # ─────────────────────────────────────────────────────────────────
         except Exception as e:
             del login_state[Config.OWNER_ID]
-            await event.reply(f"<blockquote>❌ <b>Error</b>\n\nFailed to verify 2FA: {str(e)}</blockquote>", parse_mode="html")
+            await event.reply(f"<blockquote>❌ <b>Error</b>\n\nFailed to verify 2FA: {str(e)}</blockquote>")
             logger.error(f"2FA verify error: {e}")
 
 # ============================================
@@ -860,7 +982,7 @@ async def bot_login_flow_handler(event):
 @bot.on(events.NewMessage(pattern=r"^/remove$", incoming=True, func=lambda e: e.is_private))
 async def bot_remove_handler(event):
     if event.sender_id != Config.OWNER_ID:
-        await event.reply("<blockquote>❌ This command is only for the admin.</blockquote>", parse_mode="html")
+        await event.reply("<blockquote><b>Access Denied:</b> This command is only for the admin.</blockquote>")
         return
     
     session_file = f"{Config.SESSION_NAME}.session"
@@ -868,11 +990,27 @@ async def bot_remove_handler(event):
     
     deleted = False
     
-    if os.path.exists(session_file):
+    # First, attempt to cleanly log out which removes the session on Telegram's end
+    # and safely deletes the local .session file without lock issues.
+    if userbot_client and userbot_client.is_connected():
+        try:
+            await userbot_client.log_out()
+            logger.info("Userbot logged out successfully")
+            deleted = True
+        except Exception as e:
+            logger.error(f"Failed to log out userbot cleanly: {e}")
+            # Fallback: disconnect and manually delete
+            try:
+                await userbot_client.disconnect()
+            except Exception:
+                pass
+    
+    # Fallback to manual file removal if log_out failed or client wasn't connected
+    if not deleted and os.path.exists(session_file):
         try:
             os.remove(session_file)
             deleted = True
-            logger.info(f"Session file removed: {session_file}")
+            logger.info(f"Session file removed manually: {session_file}")
         except Exception as e:
             logger.error(f"Failed to remove session file: {e}")
     
@@ -883,18 +1021,25 @@ async def bot_remove_handler(event):
         except Exception as e:
             logger.error(f"Failed to remove session journal: {e}")
     
+    # ── Clear session from MongoDB ────────────────────────────────────────────
+    try:
+        if ether_db.db is not None:
+            await ether_db.db.sessions.delete_one({"name": Config.SESSION_NAME})
+            logger.info("Session: DELETED from database.")
+    except Exception as db_err:
+        logger.warning(f"Session DB delete failed (non-critical): {db_err}")
+    # ─────────────────────────────────────────────────────────────────────────
+    
     if deleted:
         await event.reply(
             "🗑️ <b>Session Removed</b>\n\n"
-            "Your session has been deleted.\n"
-            "Use /login to create a new session.",
-            parse_mode="html"
+            "Your session has been deleted from disk and database.\n"
+            "Use /login to create a new session."
         )
     else:
         await event.reply(
             "ℹ️ <b>No Session Found</b>\n\n"
-            "No session file exists to remove.",
-            parse_mode="html"
+            "No session file exists to remove."
         )
 
 
@@ -933,6 +1078,9 @@ def apply_font(text, font_key):
 
 
 # ============================================
+
+
+# ============================================
 # Bot Class
 # ============================================
 
@@ -943,27 +1091,43 @@ class EtherBot:
         self._running = False
     
     async def start(self) -> None:
+        """Connect the bot to Telegram (non-blocking — does NOT run the event loop)."""
         if not Config.BOT_TOKEN:
             logger.warning("No BOT_TOKEN - bot features disabled")
             return
         
         try:
             logger.info(f"Attempting to start bot with token: {self.token[:20]}...")
-            logger.info(f"Connecting to Telegram servers...")
-            
-            # Add timeout to connection
             await asyncio.wait_for(bot.start(bot_token=self.token), timeout=30)
-            
-            logger.info("Bot connected successfully - waiting for messages...")
-            await bot.run_until_disconnected()
+            logger.info("Bot connected successfully")
         except asyncio.TimeoutError:
             logger.error("Bot connection timed out after 30 seconds")
         except Exception as e:
-            logger.error(f"Bot error: {e}", exc_info=True)
+            logger.error(f"Bot start error: {e}", exc_info=True)
+
+    async def get_me(self):
+        return await bot.get_me()
+
+    async def run(self) -> None:
+        """Keep the bot alive — call this after start()."""
+        try:
+            await bot.run_until_disconnected()
+        except Exception as e:
+            logger.error(f"Bot run error: {e}", exc_info=True)
     
     async def stop(self) -> None:
         await bot.disconnect()
         logger.info("Bot stopped")
+
+
+async def send_log(text: str, buttons=None):
+    """Sends a notification log to the owner via the Bot UI."""
+    if not Config.BOT_TOKEN or not Config.OWNER_ID:
+        return
+    try:
+        await bot.send_message(Config.OWNER_ID, text, buttons=buttons)
+    except Exception as e:
+        logger.error(f"Failed to send log to owner: {e}")
 
 
 ether_bot = EtherBot()

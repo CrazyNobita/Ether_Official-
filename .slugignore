@@ -1,0 +1,23 @@
+# Heroku Slugignore
+# Exclude files from the final production slug to reduce size
+
+# Documentation
+CONTRIBUTING.md
+LICENSE
+docs/
+
+# Assets and media
+media/
+downloads/
+
+# Configuration and development files
+.env.example
+.gitignore
+.dockerignore
+
+# Logs
+logs/
+*.log
+
+# Git
+.git/

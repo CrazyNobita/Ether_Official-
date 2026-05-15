@@ -1,8 +1,0 @@
-# ============================
-# Ether Userbot Requirements
-# ============================
-
-telethon==1.36.0
-motor==3.4.0
-pymongo==4.7.2
-python-dotenv==1.0.1

@@ -20,6 +20,7 @@
 # =============================================================================
 
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from config.config import Config
 from utils.logger import get_logger
 
@@ -40,15 +41,33 @@ class EtherUserClient:
 # Client Management
 # ============================================
 
+    def init_client(self, session_string: str = None):
+        """
+        (Re)initialize the TelegramClient.
+        - If a session_string is provided, resume the existing session from MongoDB.
+        - Otherwise, create a fresh blank StringSession (will require login).
+        """
+        session = StringSession(session_string) if session_string else StringSession()
+        self._client = TelegramClient(
+            session,
+            Config.API_ID,
+            Config.API_HASH
+        )
+        self._client.parse_mode = 'html'
+        logger.info("Session: Client initialized with %s session." % ("stored" if session_string else "blank"))
+        return self._client
+
     @property
     def client(self) -> TelegramClient:
         if self._client is None:
-            self._client = TelegramClient(
-                Config.SESSION_NAME,
-                Config.API_ID,
-                Config.API_HASH
-            )
+            self.init_client()
         return self._client
+
+    def get_session_string(self) -> str:
+        """Export the current session as a string for storage in MongoDB."""
+        if self._client and self._client.session:
+            return self._client.session.save()
+        return None
 
     async def connect(self) -> bool:
         try:
@@ -75,4 +94,4 @@ class EtherUserClient:
             return False
 
     def get_client(self) -> TelegramClient:
-        return self.client
+        return self.client
