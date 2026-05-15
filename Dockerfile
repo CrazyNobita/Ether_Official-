@@ -2,14 +2,15 @@
 FROM python:3.11-slim
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN pip install --no-cache-dir uv
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
     UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
 
 # Set the working directory
 WORKDIR /app
@@ -36,5 +37,4 @@ RUN mkdir -p /app/media /app/sessions /app/logs && \
 VOLUME ["/app/media", "/app/sessions", "/app/logs"]
 
 # Set the default command to run the application using uv run
-CMD ["uv", "run", "main.py"]
-
+CMD ["python3", "main.py"]

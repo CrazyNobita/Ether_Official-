@@ -1,1 +1,1 @@
-worker: uv run main.py
+worker: python3 main.py
