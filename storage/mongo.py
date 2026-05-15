@@ -19,7 +19,7 @@
 #  Thank you for respecting open-source development.
 # =============================================================================
 
-from pymongo import AsyncMongoClient
+from motor.motor_asyncio import AsyncIOMotorClient
 from config.config import Config
 from utils.logger import get_logger
 
