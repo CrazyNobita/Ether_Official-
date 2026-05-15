@@ -232,15 +232,11 @@ def setup(ether, db, owner_id):
 
         # --- Text extraction ---
         if custom_text:
-            # User typed text directly in the command
-            if event.message.entities:
-                # Telegram already parsed entities (bold, italic, etc.) — unparse to HTML
-                full_html = html.unparse(event.message.text, event.message.entities)
-                # Strip the ".setwelcome " command prefix from the HTML string
-                parsed_text = re.sub(r'^\.setwelcome\s+', '', full_html, flags=re.IGNORECASE | re.DOTALL)
-            else:
-                # Raw text — may contain Markdown symbols like >, _, **
-                parsed_text = md_to_html(custom_text)
+            # Always use md_to_html() for inline custom text.
+            # Reason: html.unparse() HTML-escapes plain-text portions (> → &gt;)
+            # and Telegram client entities may use <strong> instead of <b>.
+            # Our md_to_html() converts raw Markdown symbols directly to clean HTML.
+            parsed_text = md_to_html(custom_text)
         elif msg is not None:
             # Text came from the replied message
             raw = msg.text or msg.caption or ""
