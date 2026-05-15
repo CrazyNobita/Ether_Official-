@@ -25,7 +25,6 @@ import random
 import os
 import asyncio
 from telethon import TelegramClient, events, Button
-from telethon.extensions import html as tl_html
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.errors import (
     SessionPasswordNeededError,
@@ -166,44 +165,40 @@ async def inline_help(event):
                 
                 if WELCOME_DATA["image"]:
                     media_type = WELCOME_DATA.get("media_type", "photo")
-                    
-                    # ✅ Correct Telethon way: pre-parse HTML into (text, entities)
                     raw_text = WELCOME_DATA["text"] or ""
-                    parsed_msg, parsed_entities = tl_html.parse(raw_text)
                     
                     if media_type == "video":
                         result = builder.video(
                             file=WELCOME_DATA["image"],
                             id="welcome_msg",
-                            text=parsed_msg,
-                            entities=parsed_entities,
+                            text=raw_text,
+                            parse_mode='html',
                             buttons=buttons
                         )
                     elif media_type == "gif":
                         result = builder.gif(
                             file=WELCOME_DATA["image"],
                             id="welcome_msg",
-                            text=parsed_msg,
-                            entities=parsed_entities,
+                            text=raw_text,
+                            parse_mode='html',
                             buttons=buttons
                         )
                     else: # Default to photo
                         result = builder.photo(
                             file=WELCOME_DATA["image"],
                             id="welcome_msg",
-                            text=parsed_msg,
-                            entities=parsed_entities,
+                            text=raw_text,
+                            parse_mode='html',
                             buttons=buttons
                         )
                 else:
                     raw_text = WELCOME_DATA["text"] or ""
-                    parsed_msg, parsed_entities = tl_html.parse(raw_text)
                     result = builder.article(
                         id="welcome_msg",
                         title="Welcome Message",
                         description="DM Protection Welcome",
-                        text=parsed_msg,
-                        entities=parsed_entities,
+                        text=raw_text,
+                        parse_mode='html',
                         buttons=buttons
                     )
                 
