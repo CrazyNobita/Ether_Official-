@@ -23,6 +23,7 @@ import time
 from datetime import datetime, timedelta
 from telethon import events
 from utils.logger import get_logger
+from utils.task_helper import safe_run
 
 logger = get_logger("MessageLogger")
 
@@ -32,13 +33,13 @@ def setup(ether, db, owner_id):
     msg_col = db["messages"]
 
     # Create TTL index to auto-delete messages older than 48 hours
-    # This keeps the database size under control
-    try:
-        # We use a background task or just run it once at setup
-        # index name 'expire_at_1'
-        msg_col.create_index("expire_at", expireAfterSeconds=0)
-    except Exception as e:
-        logger.warning(f"Could not create TTL index: {e}")
+    async def create_ttl_index():
+        try:
+            await msg_col.create_index("expire_at", expireAfterSeconds=0)
+        except Exception as e:
+            logger.warning(f"Could not create TTL index: {e}")
+
+    safe_run(create_ttl_index(), name="CreateMessageTTLIndex")
 
     @ether.on(events.MessageEdited(incoming=True))
     async def edit_sniffer(event):

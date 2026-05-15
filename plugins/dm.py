@@ -117,7 +117,14 @@ def setup(ether, db, owner_id):
             welcome_config = await dm_service.get_welcome(owner_id)
             if welcome_config.get("text"):
                 WELCOME_DATA["text"] = welcome_config["text"]
-                WELCOME_DATA["image"] = welcome_config.get("image")
+                
+                # Check if the saved image file exists (important for Heroku/Docker restarts)
+                img = welcome_config.get("image")
+                if img and os.path.exists(img):
+                    WELCOME_DATA["image"] = img
+                else:
+                    WELCOME_DATA["image"] = DEFAULT_WELCOME_IMAGE
+                
                 WELCOME_DATA["buttons"] = welcome_config.get("buttons")
                 WELCOME_DATA["media_type"] = welcome_config.get("media_type", "photo")
         except Exception as e:
@@ -359,7 +366,14 @@ def setup(ether, db, owner_id):
         welcome_config = await dm_service.get_welcome(owner_id)
 
         welcome_text = welcome_config.get("text") or DEFAULT_WELCOME_TEXT
-        welcome_image = welcome_config.get("image") or DEFAULT_WELCOME_IMAGE
+        
+        # Check if saved media exists on disk
+        saved_image = welcome_config.get("image")
+        if saved_image and os.path.exists(saved_image):
+            welcome_image = saved_image
+        else:
+            welcome_image = DEFAULT_WELCOME_IMAGE
+            
         welcome_buttons = welcome_config.get("buttons") or DEFAULT_WELCOME_BUTTONS
         welcome_media_type = welcome_config.get("media_type") or "photo"
 
