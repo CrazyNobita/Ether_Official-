@@ -24,13 +24,8 @@ services:
       - key: MONGO_URI
         sync: false
 
-      - key: WEB_SERVICE
-        value: "true"
-
-      - key: SESSION_NAME
-        value: "etheruserbot"
-
       - key: PORT
         value: "10000"
 
-    dockerCommand: python3 -m main
+      - key: WEB_SERVICE
+        value: "true"
