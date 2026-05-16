@@ -1,9 +1,11 @@
 services:
   - type: web
     name: ether-userbot
-    env: docker
-    autoDeploy: false
+    runtime: docker
     plan: free
+
+    autoDeploy: false
+
     healthCheckPath: /
 
     envVars:
@@ -30,3 +32,5 @@ services:
 
       - key: PORT
         value: "10000"
+
+    dockerCommand: python3 -m main
