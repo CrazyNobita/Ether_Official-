@@ -28,79 +28,159 @@ from utils.task_helper import safe_run
 logger = get_logger("MessageLogger")
 
 def setup(ether, db, owner_id):
-    
-    # Collection reference
-    msg_col = db["messages"]
 
-    # Create TTL index to auto-delete messages older than 48 hours
+    msg_col = db["messages"]
+    config_col = db["logger_config"]
+
+    # ============================================
+    # DEFAULT CONFIG
+    # ============================================
+
+    async def get_config():
+        cfg = await config_col.find_one({"owner_id": owner_id})
+        if not cfg:
+            return {
+                "enabled": True,
+                "log_chat_id": None
+            }
+        return cfg
+
+    async def set_config(data: dict):
+        await config_col.update_one(
+            {"owner_id": owner_id},
+            {"$set": data},
+            upsert=True
+        )
+
+    # ============================================
+    # TTL INDEX
+    # ============================================
+
     async def create_ttl_index():
         try:
-            await msg_col.create_index("expire_at", expireAfterSeconds=0)
+            await msg_col.create_index(
+                "expire_at",
+                expireAfterSeconds=0
+            )
         except Exception as e:
-            logger.warning(f"Could not create TTL index: {e}")
+            logger.warning(f"TTL index error: {e}")
 
     safe_run(create_ttl_index(), name="CreateMessageTTLIndex")
 
+    # ============================================
+    # EDIT LOGGER
+    # ============================================
+
     @ether.on(events.MessageEdited(incoming=True))
     async def edit_sniffer(event):
-        if not event.is_private or event.sender_id == owner_id:
+
+        if event.sender_id == owner_id:
             return
-            
-        # Fetch original from MongoDB
-        cached = await msg_col.find_one({"msg_id": event.id, "chat_id": event.chat_id})
-        
+
+        sender = await event.get_sender()
+
+        # ignore bots / groups / channels
+        if (
+            not event.is_private
+            or not sender
+            or getattr(sender, "bot", False)
+            or getattr(sender, "broadcast", False)
+        ):
+            return
+
+        cfg = await get_config()
+
+        if not cfg.get("enabled"):
+            return
+
+        log_chat = cfg.get("log_chat_id") or "me"
+
+        cached = await msg_col.find_one({
+            "msg_id": event.id,
+            "chat_id": event.chat_id
+        })
+
         if cached:
-            old_text = cached.get('text', "")
-            new_text = event.text
-            
+            old_text = cached.get("text", "")
+            new_text = event.text or ""
+
             if old_text != new_text:
+
                 log_msg = (
                     "<blockquote>"
                     "<b>Message Edited</b>\n"
-                    f"<b>User:</b> <a href='tg://user?id={event.sender_id}'>{event.sender_id}</a>\n\n"
+                    f"<b>User:</b> <code>{event.sender_id}</code>\n\n"
                     f"<b>Before:</b>\n<code>{old_text}</code>\n\n"
                     f"<b>After:</b>\n<code>{new_text}</code>"
                     "</blockquote>"
                 )
-                await ether.send_message("me", log_msg)
-        
-        # Update MongoDB with new text
+
+                await ether.send_message(log_chat, log_msg)
+
         await msg_col.update_one(
             {"msg_id": event.id, "chat_id": event.chat_id},
-            {"$set": {"text": event.text, "edit_count": cached.get('edit_count', 0) + 1 if cached else 1}},
+            {
+                "$set": {
+                    "text": event.text,
+                    "edit_count": cached.get("edit_count", 0) + 1 if cached else 1
+                }
+            },
             upsert=True
         )
 
+    # ============================================
+    # DELETE LOGGER
+    # ============================================
+
     @ether.on(events.MessageDeleted())
     async def delete_sniffer(event):
-        # event.deleted_ids is a list of IDs
+
+        cfg = await get_config()
+
+        if not cfg.get("enabled"):
+            return
+
+        log_chat = cfg.get("log_chat_id") or "me"
+
         for msg_id in event.deleted_ids:
-            # We don't have chat_id in global MessageDeleted, 
-            # so we search by msg_id (might have collisions but unlikely in DMs)
+
             cached = await msg_col.find_one({"msg_id": msg_id})
-            
+
             if cached:
+
                 log_msg = (
                     "<blockquote>"
                     "<b>Message Deleted</b>\n"
-                    f"<b>User:</b> <a href='tg://user?id={cached['sender_id']}'>{cached['sender_id']}</a>\n\n"
-                    f"<b>Original Content:</b>\n<code>{cached['text']}</code>"
+                    f"<b>User:</b> <code>{cached['sender_id']}</code>\n\n"
+                    f"<b>Original:</b>\n<code>{cached.get('text', '')}</code>"
                     "</blockquote>"
                 )
-                await ether.send_message("me", log_msg)
-                
-                # Optionally keep in DB but marked as deleted, or just let TTL handle it
-                # For now, let's just leave it for the TTL to clean up
+
+                await ether.send_message(log_chat, log_msg)
+
+    # ============================================
+    # CACHE MESSAGES (PRIVATE ONLY)
+    # ============================================
 
     @ether.on(events.NewMessage(incoming=True))
     async def cache_messages(event):
-        if not event.is_private or event.sender_id == owner_id:
+
+        if event.sender_id == owner_id:
             return
-            
-        # Save to MongoDB
-        # TTL: 48 hours from now
+
+        sender = await event.get_sender()
+
+        # ignore bots / groups / channels
+        if (
+            not event.is_private
+            or not sender
+            or getattr(sender, "bot", False)
+            or getattr(sender, "broadcast", False)
+        ):
+            return
+
         expire_at = datetime.utcnow() + timedelta(hours=48)
-        
+
         await msg_col.insert_one({
             "msg_id": event.id,
             "chat_id": event.chat_id,
@@ -110,4 +190,47 @@ def setup(ether, db, owner_id):
             "expire_at": expire_at
         })
 
-    logger.info("Message Logger plugin loaded (MongoDB persistence active)")
+    # ============================================
+    # TOGGLE COMMAND
+    # ============================================
+
+    @ether.on(events.NewMessage(pattern=r"^\.log(on|off)$", outgoing=True))
+    async def toggle_logger(event):
+
+        if event.sender_id != owner_id:
+            return
+
+        mode = event.pattern_match.group(1)
+
+        cfg = await get_config()
+
+        cfg["enabled"] = (mode == "on")
+
+        await set_config(cfg)
+
+        await event.edit(
+            f"<blockquote>Logger {'enabled' if mode == 'on' else 'disabled'}.</blockquote>",
+            parse_mode="html"
+        )
+
+    # ============================================
+    # SET LOG CHAT
+    # ============================================
+
+    @ether.on(events.NewMessage(pattern=r"^\.setlog$", outgoing=True))
+    async def set_log_chat(event):
+
+        if event.sender_id != owner_id:
+            return
+
+        chat_id = event.chat_id
+
+        await set_config({
+            "log_chat_id": chat_id,
+            "enabled": True
+        })
+
+        await event.edit(
+            "<blockquote>✅ Log chat set successfully.</blockquote>",
+            parse_mode="html"
+        )

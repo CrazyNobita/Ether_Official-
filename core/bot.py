@@ -122,24 +122,19 @@ async def inline_help(event):
         )
         
         await event.answer([result], cache_time=0)
-        logger.info(f"Inline help for user {event.sender_id}")
 
 # ============================================
 
     elif event.text == "welcome":
-        logger.info(f"Welcome inline query from user {event.sender_id}")
         if WELCOME_DATA["text"]:
             try:
                 
                 buttons = None
                 if WELCOME_DATA["buttons"]:
-                    logger.info(f"Reconstructing {len(WELCOME_DATA['buttons'])} button rows")
                     button_rows = []
                     for i, row in enumerate(WELCOME_DATA["buttons"]):
                         row_buttons = []
-                        logger.info(f"Processing row {i}: {type(row)} - {row}")
                         for btn in row:
-                            logger.info(f"Processing button: {type(btn)} - {btn}")
                             if isinstance(btn, dict):
                                 if btn.get("type") == "url":
                                     row_buttons.append(Button.url(btn["text"], btn["url"]))
@@ -156,11 +151,9 @@ async def inline_help(event):
                                 logger.warning(f"Unexpected button type: {type(btn)}")
                         if row_buttons:
                             button_rows.append(row_buttons)
-                            logger.info(f"Added row with {len(row_buttons)} buttons")
                     
                     if button_rows:
                         buttons = button_rows
-                        logger.info(f"Total button rows: {len(button_rows)}")
                 
                 
                 if WELCOME_DATA["image"]:
@@ -379,7 +372,8 @@ async def cb_dm(event):
         "<code>.setwelcome</code> - Set welcome message\n"
         "<code>.clearwelcome</code> - Remove welcome\n"
         "<code>.allow</code> - Allow user\n"
-        "<code>.disallow</code> - Disallow user\n\n"
+        "<code>.disallow</code> - Disallow user\n"
+        "<code>.setwarn</code> - Set warning limit\n\n"
 
         "<b>Supports:</b>\n"
         "• Buttons\n"
@@ -495,7 +489,14 @@ async def cb_privacy(event):
     await event.edit(
         "<blockquote>"
         "<b>Self-Destruct:</b>\n"
-        "• <code>.sd &lt;secs&gt; &lt;text&gt;</code> - Send vanishing text"
+        "• <code>.sd &lt;secs&gt; &lt;text&gt;</code> - Send vanishing text\n\n"
+
+        "<b>Message Logger:</b>\n"
+        "• <code>.setlog</code> - Set log group/channel\n"
+        "• <code>.logon</code> - Enable edit/delete logger\n"
+        "• <code>.logoff</code> - Disable logger\n\n"
+        "📌 Logs private messages only\n"
+        "🚫 Ignores bots, groups, and channels"
         "</blockquote>",
         buttons=[[Button.inline("Back", b"help_back")]]
     )

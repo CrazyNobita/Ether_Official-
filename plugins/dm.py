@@ -22,7 +22,7 @@
 import re
 import os
 import time
-
+import asyncio
 
 from telethon import events, Button
 from telethon.extensions import html
@@ -271,10 +271,6 @@ def setup(ether, db, owner_id):
                 or "photo"
             )
 
-            logger.info(
-                f"[WELCOME CACHE LOADED] OWNER={owner_id}"
-            )
-
         except Exception as e:
             logger.error(
                 f"[WELCOME CACHE ERROR] {e}"
@@ -365,10 +361,6 @@ def setup(ether, db, owner_id):
             await dm_service.disallow_user(
                 user_id,
                 owner_id
-            )
-
-            logger.info(
-                f"[USER DISALLOWED] USER={user_id}"
             )
 
             await event.edit(
@@ -717,10 +709,6 @@ def setup(ether, db, owner_id):
             WELCOME_DATA["buttons"] = None
             WELCOME_DATA["media_type"] = "photo"
 
-            logger.info(
-                f"[WELCOME CLEARED] OWNER={owner_id}"
-            )
-
             await event.edit(
                 "<blockquote>"
                 "🗑️ Welcome message cleared."
@@ -931,6 +919,100 @@ def setup(ether, db, owner_id):
                 f"[WARNING ERROR] {e}"
             )
     
+
+
+    # ============================================
+    # Spam Detection Handler
+    # ============================================
+
+    async def handle_spam_detection(
+        event,
+        user,
+        user_id
+    ):
+
+        warns = int(
+            user.get("warns", 0)
+        )
+
+        warns += 1
+
+        message_text = (
+            event.raw_text or ""
+        ).strip()
+
+        # Save state
+        await dm_service.update_user(
+            user_id,
+            {
+                "warns": warns,
+                "message_count": user.get(
+                    "message_count",
+                    0
+                ) + 1,
+                "last_message_text": message_text
+            }
+        )
+
+        return warns
+
+    # ============================================
+    # Set DM Warn Limit
+    # ============================================
+
+    @ether.on(events.NewMessage(
+        pattern=r"^\.setwarn\s+(\d+)$",
+        outgoing=True
+    ))
+    async def setwarnlimit_handler(event):
+
+        if event.sender_id != owner_id:
+            return
+
+        try:
+
+            limit = int(
+                event.pattern_match.group(1)
+            )
+
+            if limit < 1:
+
+                await event.edit(
+                    "<blockquote>"
+                    "❌ Limit must be greater than 0."
+                    "</blockquote>",
+                    parse_mode="html"
+                )
+
+                return
+
+            Config.DM_MAX_WARNS = limit
+
+            global max_warns
+            max_warns = limit
+
+            await event.edit(
+                f"<blockquote>"
+                f"✅ DM warn limit updated to "
+                f"<b>{limit}</b>."
+                f"</blockquote>",
+                parse_mode="html"
+            )
+
+        except Exception as e:
+
+            logger.error(
+                f"[SET WARN LIMIT ERROR] {e}"
+            )
+
+            await event.edit(
+                "<blockquote>"
+                "❌ Failed to update warn limit."
+                "</blockquote>",
+                parse_mode="html"
+            )
+
+
     
     # ============================================
     # Main DM Handler
@@ -950,26 +1032,15 @@ def setup(ether, db, owner_id):
         if await should_ignore_message(event):
             return
     
-        # ============================================
-        # DB check
-        # ============================================
     
         if db is None:
-            logger.warning("[DB NOT READY]")
             return
     
         user_id = event.sender_id
     
-        # ============================================
-        # User init
-        # ============================================
-    
         user = await get_or_create_user(user_id)
     
         if not user:
-            logger.error(
-                f"[USER CREATE FAILED] USER={user_id}"
-            )
             return
     
         # ============================================
@@ -994,14 +1065,8 @@ def setup(ether, db, owner_id):
         else:
             welcome_image = DEFAULT_WELCOME_IMAGE
     
-        # ============================================
-        # BUTTON FIX (IMPORTANT)
-        # ============================================
     
         welcome_buttons = welcome_config.get("buttons", [])
-    
-        # DO NOT USE DEFAULT_WELCOME_BUTTONS HERE
-        # it causes repo button leak
     
         # ============================================
         # Media type
@@ -1073,10 +1138,6 @@ def setup(ether, db, owner_id):
                 welcome_media_type
             )
     
-            logger.info(
-                f"[WELCOME SENT] USER={user_id}"
-            )
-    
             return
     
         # ============================================
@@ -1096,18 +1157,30 @@ def setup(ether, db, owner_id):
         # ============================================
         # Block user
         # ============================================
-    
+        
         if warns >= max_warns:
-    
+        
             logger.warning(
                 f"[USER BLOCKED] USER={user_id}"
             )
-    
-            await block_user(
-                event,
-                user_id
-            )
-    
+        
+            try:
+        
+                await event.respond(
+                    "<blockquote>⛔ You have been blocked for spamming.</blockquote>",
+                    parse_mode="html"
+                )
+        
+                await asyncio.sleep(1)
+        
+                await dm_service.block_user(user_id)
+                await ether(BlockRequest(user_id))
+        
+            except Exception as e:
+                logger.error(
+                    f"[BLOCK ERROR] USER={user_id} ERROR={e}"
+                )
+        
             return
     
         # ============================================
@@ -1152,10 +1225,6 @@ def setup(ether, db, owner_id):
     
             # Auto allow
             await dm_service.allow_user(user_id)
-    
-            logger.info(
-                f"[AUTO ALLOWED] USER={user_id}"
-            )
     
         except Exception as e:
             logger.error(

@@ -163,4 +163,3 @@ def setup(ether, db, owner_id):
             logger.error(f"Info error: {e}")
             await event.edit(f"<blockquote>Failed to fetch info: {str(e)}</blockquote>")
 
-    logger.info("Enhanced Info plugin loaded")

@@ -56,10 +56,6 @@ def setup(ether, db, owner_id):
     
         settings = await shield.get(owner_id)
     
-        # 🔥 DEBUG (remove later if needed)
-        logger.info(f"DM CHECK FROM: {event.sender_id}")
-        logger.info(f"SETTINGS: {settings}")
-    
         if not settings.get("enabled"):
             return
     
@@ -73,7 +69,6 @@ def setup(ether, db, owner_id):
         if event.message.media and not (user and user.get("message_count", 0) > 2):
             try:
                 await event.delete()
-                logger.info(f"Shield: Deleted unauthorized media from {event.sender_id}")
             except Exception as e:
                 logger.error(f"DM media delete failed: {e}")
             return

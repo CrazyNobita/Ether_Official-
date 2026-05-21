@@ -77,7 +77,6 @@ class PluginLoader:
                 )
                 
                 self.loaded.append(module_name)
-                logger.info(f"✅ Loaded plugin: {module_name}")
             else:
                 logger.warning(f"⚠️ Plugin {module_name} has no setup() function")
                 

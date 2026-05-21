@@ -51,5 +51,3 @@ def setup(ether, db, owner_id):
             await event.delete()
         except Exception:
             pass
-    
-    logger.info("Ping plugin loaded")

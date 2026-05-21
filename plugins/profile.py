@@ -107,4 +107,3 @@ def setup(ether, db, owner_id):
             logger.error(f"Name update error: {e}")
             await event.edit(f"<blockquote>Error updating name: {str(e)}</blockquote>")
 
-    logger.info("Profile Management plugin loaded")

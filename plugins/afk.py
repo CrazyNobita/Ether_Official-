@@ -100,7 +100,6 @@ def setup(ether, db, owner_id):
         s = uptime % 60
         duration = f"{h}h {m}m {s}s" if h > 0 else (f"{m}m {s}s" if m > 0 else f"{s}s")
 
-        logger.info(f"AFK disabled silently after {duration}")
 
 # ============================================
 # Mention/DM Watcher
@@ -137,4 +136,3 @@ def setup(ether, db, owner_id):
             
             await event.reply(reply_text)
 
-    logger.info("AFK plugin loaded")

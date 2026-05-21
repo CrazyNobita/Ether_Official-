@@ -70,5 +70,3 @@ def setup(ether, db, owner_id):
 
     from utils.task_helper import safe_run
     safe_run(unblock_task(), name="AutoUnblocker")
-
-    logger.info("Privacy plugin loaded (Temp-ban active)")

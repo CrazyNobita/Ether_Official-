@@ -140,5 +140,4 @@ def setup(ether, db, owner_id):
         )
         
         await event.edit(command_list)
-    
-    logger.info("Help plugin loaded (inline mode)")
+
