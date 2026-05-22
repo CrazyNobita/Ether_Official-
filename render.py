@@ -10,24 +10,13 @@
 #  Channel:       https://t.me/Ether_Update
 #
 #  License:       Open Source (Keep Credits)
-#
-#  IMPORTANT:
-#    • If you copy, fork, or reuse this project or any part of it,
-#      you MUST retain original credits.
-#    • Proper attribution to Ether project is required.
-#
-#  Thank you for respecting open-source development.
 # =============================================================================
 
-
 import asyncio
-
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
 import signal
 import sys
 import os
+
 from contextlib import suppress
 
 from core.user_client import EtherUserClient
@@ -38,18 +27,32 @@ from config.config import Config
 from config.channels import validate_integrity
 from utils.logger import setup_logger, get_logger
 
+# -----------------------------------------------------------------------------
+# LOGGER
+# -----------------------------------------------------------------------------
+
 setup_logger()
 logger = get_logger("EtherMain")
 
-plugin_loader = None
-shutdown_event = asyncio.Event()
+# -----------------------------------------------------------------------------
+# GLOBALS
+# -----------------------------------------------------------------------------
 
+shutdown_event = asyncio.Event()
+plugin_loader = None
+
+# -----------------------------------------------------------------------------
+# KEEP ALIVE
+# -----------------------------------------------------------------------------
 
 async def keep_alive():
     while not shutdown_event.is_set():
         logger.info("⚡ Ether Alive")
         await asyncio.sleep(300)
 
+# -----------------------------------------------------------------------------
+# USERBOT
+# -----------------------------------------------------------------------------
 
 async def run_userbot():
     global plugin_loader
@@ -57,13 +60,13 @@ async def run_userbot():
     try:
         logger.info("🚀 Starting Userbot")
 
-        db_connected = await ether_db.connect()
-
-        if db_connected:
+        # MongoDB
+        if await ether_db.connect():
             logger.info("✅ MongoDB Connected")
         else:
             logger.warning("⚠️ MongoDB Connection Failed")
 
+        # Session Check
         session_file = f"{Config.SESSION_NAME}.session"
 
         if os.path.exists(session_file):
@@ -71,19 +74,17 @@ async def run_userbot():
         else:
             logger.warning(f"⚠️ Session Missing: {session_file}")
 
+        # User Client
         client_wrapper = EtherUserClient()
 
-        connected = await client_wrapper.connect()
-
-        if not connected:
+        if not await client_wrapper.connect():
             logger.error("❌ Failed To Connect User Client")
             return
 
         logger.info("✅ User Client Connected")
 
-        is_authorized = await client_wrapper.is_authorized()
-
-        if is_authorized:
+        # Authorization Check
+        if await client_wrapper.is_authorized():
             logger.info("✅ Userbot Authorized")
         else:
             logger.warning("⚠️ Userbot Not Authorized")
@@ -91,27 +92,27 @@ async def run_userbot():
 
         client = client_wrapper.get_client()
 
+        # Set Global References
         set_userbot_client(client, client_wrapper)
 
-        loader = PluginLoader(
+        # Plugin Loader
+        plugin_loader = PluginLoader(
             client=client,
             db=ether_db.db,
             owner_id=Config.OWNER_ID
         )
 
-        loader.load_all()
+        plugin_loader.load_all()
 
-        plugin_loader = loader
+        set_plugin_loader(plugin_loader)
 
-        set_plugin_loader(loader)
-
-        stats = loader.get_stats()
+        stats = plugin_loader.get_stats()
 
         logger.info(f"✅ Plugins Loaded: {stats['total']}")
         logger.info(f"📦 {stats['plugins']}")
-
         logger.info("🤖 Userbot Running")
 
+        # Run Forever
         await client.run_until_disconnected()
 
     except asyncio.CancelledError:
@@ -120,6 +121,9 @@ async def run_userbot():
     except Exception as e:
         logger.error(f"❌ Userbot Error: {e}", exc_info=True)
 
+# -----------------------------------------------------------------------------
+# BOT
+# -----------------------------------------------------------------------------
 
 async def run_bot():
     try:
@@ -134,6 +138,7 @@ async def run_bot():
         me = await ether_bot.get_me()
 
         logger.info(f"✅ Bot Started: @{me.username}")
+        logger.info("🤖 Bot Running")
 
         await asyncio.Event().wait()
 
@@ -143,12 +148,16 @@ async def run_bot():
     except Exception as e:
         logger.error(f"❌ Bot Error: {e}", exc_info=True)
 
+# -----------------------------------------------------------------------------
+# STARTUP
+# -----------------------------------------------------------------------------
 
 async def startup():
     logger.info("════════════════════════════")
     logger.info("🚀 Ether Starting")
     logger.info("════════════════════════════")
 
+    # Security Check
     if not validate_integrity():
         logger.error("❌ SECURITY VIOLATION")
         sys.exit(1)
@@ -158,7 +167,7 @@ async def startup():
     tasks = [
         asyncio.create_task(run_bot(), name="BotTask"),
         asyncio.create_task(run_userbot(), name="UserbotTask"),
-        asyncio.create_task(keep_alive(), name="KeepAliveTask"),
+        asyncio.create_task(keep_alive(), name="KeepAliveTask")
     ]
 
     logger.info("✅ All Systems Started")
@@ -170,10 +179,11 @@ async def startup():
     for task in tasks:
         task.cancel()
 
-    for task in tasks:
-        with suppress(asyncio.CancelledError):
-            await task
+    await asyncio.gather(*tasks, return_exceptions=True)
 
+# -----------------------------------------------------------------------------
+# SHUTDOWN
+# -----------------------------------------------------------------------------
 
 async def shutdown():
     logger.info("🛑 Shutting Down")
@@ -186,19 +196,19 @@ async def shutdown():
 
     logger.info("✅ Shutdown Complete")
 
+# -----------------------------------------------------------------------------
+# MAIN
+# -----------------------------------------------------------------------------
 
-def main():
-    global loop
+async def main():
+    loop = asyncio.get_running_loop()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         with suppress(NotImplementedError):
-            loop.add_signal_handler(
-                sig,
-                shutdown_event.set
-            )
+            loop.add_signal_handler(sig, shutdown_event.set)
 
     try:
-        loop.run_until_complete(startup())
+        await startup()
 
     except KeyboardInterrupt:
         logger.warning("⚠️ Interrupted")
@@ -207,9 +217,15 @@ def main():
         logger.error(f"❌ Fatal Error: {e}", exc_info=True)
 
     finally:
-        loop.run_until_complete(shutdown())
-        loop.close()
+        await shutdown()
 
+# -----------------------------------------------------------------------------
+# ENTRY
+# -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+
+    except Exception as e:
+        logger.error(f"❌ Runtime Error: {e}", exc_info=True)
